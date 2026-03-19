@@ -503,6 +503,30 @@ function displayResult(result, mode) {
     }, 50);
     $('confidence-val').textContent = result.confidence;
 
+    // Surety Text
+    const confTextEl = $('confidence-text');
+    let suretyClass, suretyText;
+    const action = result.direction === 'UP' ? 'BUY' : 'SELL';
+
+    if (result.confidence >= 90) {
+        suretyText = `GUARANTEED ${action}`;
+        suretyClass = 'surety-guaranteed';
+    } else if (result.confidence >= 80) {
+        suretyText = `STRONG ${action}`;
+        suretyClass = 'surety-buy';
+    } else if (result.confidence >= 70) {
+        suretyText = `RISKY ${action}`;
+        suretyClass = 'surety-risky';
+    } else {
+        suretyText = `DANGER / AVOID`;
+        suretyClass = 'surety-danger';
+    }
+
+    if (confTextEl) {
+        confTextEl.textContent = suretyText;
+        confTextEl.className = `confidence-text ${suretyClass}`;
+    }
+
     // Price grid
     const priceGrid = $('price-grid');
     priceGrid.classList.remove('hidden');
