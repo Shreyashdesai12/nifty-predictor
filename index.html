@@ -3,34 +3,32 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
   <title>King Trades 21 Algo</title>
-  <meta name="description"
-    content="Nifty 50 next-day prediction system — 8/8 backtested directional accuracy using ATM options analysis.">
-  <meta name="theme-color" content="#2E5BFF">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-    rel="stylesheet">
+  <meta name="description" content="Nifty 50 next-day prediction — 8/8 backtested directional accuracy.">
+  <meta name="theme-color" content="#111111">
   <link rel="stylesheet" href="style.css">
   <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232E5BFF'/><text x='50' y='65' text-anchor='middle' fill='white' font-size='50' font-weight='700'>K</text></svg>">
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23FF3B30'/><text x='50' y='68' text-anchor='middle' fill='white' font-size='55' font-weight='800'>K</text></svg>">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
 </head>
 
 <body>
 
-  <!-- ===== HEADER ===== -->
-  <header>
-    <div class="header-top">
-      <div class="logo">
-        <div class="logo-icon">K</div>
-        <h1>King Trades 21</h1>
+  <!-- ═══ HEADER ═══ -->
+  <header class="app-header">
+    <div class="header-row">
+      <div class="header-left">
+        <div class="app-title">King Trades 21</div>
+        <div class="app-sub">Nifty 50 · Prediction Engine</div>
       </div>
-      <span class="header-badge">8/8 TESTED</span>
+      <button class="header-bell" title="8/8 backtested">✅</button>
     </div>
-    <p class="subtitle">Nifty 50 Next-Day Prediction</p>
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <span class="search-text">ATM options data · PCR · OI</span>
+    </div>
     <div id="spot-display" class="spot-display hidden">
       <span class="spot-label">NIFTY 50</span>
       <div class="spot-right">
@@ -40,28 +38,16 @@
     </div>
   </header>
 
-  <!-- ===== MAIN ===== -->
-  <main>
+  <!-- ═══ PILL TABS ═══ -->
+  <div class="tab-section">
+    <button class="tab-pill active">Analysis</button>
+    <button class="tab-pill">History</button>
+    <button class="tab-pill">Signals</button>
+    <button class="tab-pill">Settings</button>
+  </div>
 
-    <!-- Action Buttons -->
-    <div class="action-buttons">
-      <button id="btn-predict" class="btn-primary btn-predict">
-        <div class="btn-icon">🔮</div>
-        <div class="btn-text">
-          <strong>Predict Tomorrow's Close</strong>
-          <small>Use at ~3:25 PM · Predicts next-day close & direction</small>
-        </div>
-        <span class="btn-chevron">›</span>
-      </button>
-      <button id="btn-live" class="btn-primary btn-live">
-        <div class="btn-icon">⚡</div>
-        <div class="btn-text">
-          <strong>Analyze Live Market</strong>
-          <small>Check current signal · Intraday opportunity scan</small>
-        </div>
-        <span class="btn-chevron">›</span>
-      </button>
-    </div>
+  <!-- ═══ MAIN ═══ -->
+  <main>
 
     <!-- Loading -->
     <div id="loading" class="loading hidden">
@@ -71,53 +57,112 @@
 
     <!-- Error -->
     <div id="error-box" class="error-msg hidden">
-      <p id="error-text"></p>
-      <small>Enter data manually below from NSE / Sensibull / Opstra.</small>
+      <div>
+        <p id="error-text"></p>
+        <small>Enter data manually below from NSE / Sensibull / Opstra.</small>
+      </div>
     </div>
 
-    <!-- ===== RESULT CARD ===== -->
+    <!-- ── ACTION SHIPMENT CARDS ── -->
+    <div class="cards-list">
+
+      <!-- Predict Card -->
+      <button id="btn-predict" class="shipment-card">
+        <div class="card-top">
+          <div class="card-icon-wrap">🔮</div>
+          <div class="card-id-wrap">
+            <div class="card-id">Predict Tomorrow</div>
+            <div class="card-subtitle">Next-day close & direction</div>
+          </div>
+          <span class="status-pill status-ready">READY</span>
+        </div>
+        <div class="card-divider"></div>
+        <div class="card-meta">
+          <div class="card-meta-item">
+            <label>Use at</label>
+            <span>3:25 PM</span>
+          </div>
+          <div class="card-meta-item">
+            <label>Accuracy</label>
+            <span>8/8 Days</span>
+          </div>
+        </div>
+      </button>
+
+      <!-- Live Card -->
+      <button id="btn-live" class="shipment-card">
+        <div class="card-top">
+          <div class="card-icon-wrap">⚡</div>
+          <div class="card-id-wrap">
+            <div class="card-id">Live Analysis</div>
+            <div class="card-subtitle">Intraday signal scanner</div>
+          </div>
+          <span class="status-pill status-live">LIVE</span>
+        </div>
+        <div class="card-divider"></div>
+        <div class="card-meta">
+          <div class="card-meta-item">
+            <label>Type</label>
+            <span>Intraday</span>
+          </div>
+          <div class="card-meta-item">
+            <label>Signal</label>
+            <span>ATM Options</span>
+          </div>
+        </div>
+      </button>
+    </div>
+
+    <!-- ═══ RESULT CARD ═══ -->
     <div id="result-card" class="result-card hidden">
 
-      <!-- Direction Banner -->
-      <div id="result-banner" class="result-banner up">
-        <div class="direction-badge">
-          <div id="direction-arrow" class="direction-arrow">▲</div>
-          <div class="direction-text">
-            <span id="direction-label" class="direction-label">UP</span>
-            <span id="direction-sub" class="direction-sub">Predicted for tomorrow</span>
+      <!-- Direction Top -->
+      <div id="result-top" class="result-top">
+        <div class="direction-left">
+          <div id="dir-icon" class="dir-icon up">▲</div>
+          <div class="dir-text">
+            <div id="dir-label" class="dir-label up">UP</div>
+            <div id="dir-sub" class="dir-sub">Predicted for tomorrow</div>
           </div>
         </div>
-        <div class="confidence-chip">
+        <div class="conf-chip">
           <div class="confidence-ring">
-            <svg viewBox="0 0 28 28">
-              <circle cx="14" cy="14" r="12" class="ring-bg" />
-              <circle id="ring-fill" cx="14" cy="14" r="12" class="ring-fill up" />
+            <svg viewBox="0 0 44 44">
+              <circle cx="22" cy="22" r="18" class="ring-bg" />
+              <circle id="ring-fill" cx="22" cy="22" r="18" class="ring-fill up" />
+              <text x="22" y="27" text-anchor="middle" fill="#111" font-size="11" font-weight="800"
+                font-family="Inter,sans-serif">
+                <tspan id="confidence-val">—</tspan>
+              </text>
             </svg>
           </div>
-          <span id="confidence-val" class="confidence-val">—</span>
-          <span class="confidence-pct">%</span>
-          <span id="confidence-text" class="confidence-text">—</span>
+          <div class="conf-pct" id="conf-label">%</div>
         </div>
       </div>
 
-      <!-- Price Grid -->
-      <div id="price-grid" class="price-grid">
-        <div class="price-cell">
-          <div class="price-cell-label">Today's Close</div>
-          <div id="prev-close" class="price-cell-value">—</div>
+      <!-- Surety Bar -->
+      <div id="confidence-text" class="surety-bar">—</div>
+
+      <!-- Key-Value Rows -->
+      <div class="kv-section">
+        <div class="kv-row grey-bg">
+          <span class="kv-label">Today's Close</span>
+          <span id="prev-close" class="kv-value">—</span>
         </div>
-        <div class="price-cell main">
-          <div class="price-cell-label">Predicted Close</div>
-          <div id="predicted-close" class="price-cell-value">—</div>
-          <div id="predicted-change" class="price-cell-change">—</div>
+        <div class="kv-row">
+          <span class="kv-label">Predicted Close</span>
+          <span class="kv-value">
+            <span id="predicted-close">—</span>
+            <span id="predicted-change" class="change-pill">—</span>
+          </span>
         </div>
-        <div class="price-cell">
-          <div class="price-cell-label">Sure-Hit Level</div>
-          <div id="sure-hit" class="price-cell-value">—</div>
+        <div class="kv-row grey-bg">
+          <span class="kv-label">Sure-Hit Level</span>
+          <span id="sure-hit" class="kv-value">—</span>
         </div>
       </div>
 
-      <!-- Live Analysis Result -->
+      <!-- Live Analysis Extra -->
       <div id="live-result" class="live-result hidden">
         <div id="live-signal" class="live-signal"></div>
         <div id="live-action" class="live-action"></div>
@@ -125,36 +170,44 @@
       </div>
 
       <!-- Signal Breakdown -->
-      <div class="signal-breakdown">
-        <h3 class="breakdown-title" id="toggle-breakdown">
-          Signal Breakdown
-          <span class="toggle-icon">▼</span>
-        </h3>
-        <div id="breakdown-content" class="breakdown-content">
+      <div class="breakdown-wrap">
+        <div class="breakdown-toggle" id="toggle-breakdown">
+          <span class="breakdown-toggle-left">
+            Signal Breakdown
+            <span id="breakdown-count" class="breakdown-badge">5</span>
+          </span>
+          <span class="chevron-icon">▼</span>
+        </div>
+        <div id="breakdown-content" class="breakdown-body">
           <div id="signal-steps" class="signal-steps"></div>
         </div>
       </div>
     </div>
 
-    <!-- ===== MANUAL INPUT ===== -->
-    <div class="manual-section">
-      <h3 class="manual-title" id="toggle-manual">
-        <span>📝 Manual Data Input</span>
-        <span class="toggle-icon" id="manual-toggle-icon">▼</span>
-      </h3>
-      <div id="manual-form" class="manual-form hidden">
-        <p class="manual-desc">Enter ATM options data from NSE / Sensibull / Opstra after market close.</p>
+    <!-- ═══ MANUAL INPUT ═══ -->
+    <div class="manual-card">
+      <div class="manual-toggle" id="toggle-manual">
+        <div class="manual-toggle-left">
+          <div class="manual-icon-wrap">📝</div>
+          <div class="manual-toggle-text">
+            <h4>Manual Data Entry</h4>
+            <p>Enter ATM data from NSE / Sensibull</p>
+          </div>
+        </div>
+        <span class="chevron-icon" id="manual-chevron">▼</span>
+      </div>
+      <div id="manual-form" class="manual-form-body hidden">
         <div class="form-grid">
-          <div class="form-group">
-            <label for="input-close">Today's Spot Close</label>
+          <div class="form-field">
+            <label>Today's Spot Close</label>
             <input type="number" id="input-close" placeholder="23002.15" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-change">Today's Spot % Change</label>
+          <div class="form-field">
+            <label>Today's Spot % Change</label>
             <input type="number" id="input-change" placeholder="-3.26" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-put-interp">Put Interpretation</label>
+          <div class="form-field">
+            <label>Put Interpretation</label>
             <select id="input-put-interp">
               <option value="">Select...</option>
               <option value="LB">LB — Long Build-up</option>
@@ -163,49 +216,60 @@
               <option value="LC">LC — Long Unwinding</option>
             </select>
           </div>
-          <div class="form-group">
-            <label for="input-put-oi">Put OI % Change</label>
+          <div class="form-field">
+            <label>Put OI % Change</label>
             <input type="number" id="input-put-oi" placeholder="74.41" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-call-oi">Call OI % Change</label>
+          <div class="form-field">
+            <label>Call OI % Change</label>
             <input type="number" id="input-call-oi" placeholder="430.62" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-put-vol">Put Volume % Change</label>
+          <div class="form-field">
+            <label>Put Volume % Change</label>
             <input type="number" id="input-put-vol" placeholder="140.00" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-call-vol">Call Volume % Change</label>
+          <div class="form-field">
+            <label>Call Volume % Change</label>
             <input type="number" id="input-call-vol" placeholder="64.00" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-pcr-oi">PCR OI</label>
+          <div class="form-field">
+            <label>PCR OI</label>
             <input type="number" id="input-pcr-oi" placeholder="1.33" step="0.01">
           </div>
-          <div class="form-group">
-            <label for="input-dte">DTE (Days to Expiry)</label>
+          <div class="form-field">
+            <label>DTE (Days to Expiry)</label>
             <input type="number" id="input-dte" placeholder="5" step="1" min="0">
           </div>
-          <div class="form-group">
-            <label for="input-pcr-vol">PCR Volume <small style="color:var(--text-muted)">(optional)</small></label>
+          <div class="form-field">
+            <label>PCR Volume (optional)</label>
             <input type="number" id="input-pcr-vol" placeholder="4.53" step="0.01">
           </div>
         </div>
-        <div class="form-actions">
-          <button id="btn-manual-predict" class="btn-secondary">🔮 Predict Tomorrow</button>
-          <button id="btn-manual-analyze" class="btn-secondary btn-live-manual">⚡ Live Analysis</button>
+        <div class="form-btns">
+          <button id="btn-manual-predict" class="btn-black">🔮 Predict Tomorrow</button>
+          <button id="btn-manual-analyze" class="btn-outline">⚡ Live Analysis</button>
         </div>
       </div>
     </div>
 
+    <footer>
+      <p>King Trades 21 Algo · 8/8 Backtested · Not financial advice</p>
+      <p id="last-updated"></p>
+    </footer>
   </main>
 
-  <!-- ===== FOOTER ===== -->
-  <footer>
-    <p>King Trades 21 Algo · 8/8 Backtested · Not financial advice</p>
-    <p id="last-updated" class="last-updated"></p>
-  </footer>
+  <!-- ═══ BOTTOM NAV ═══ -->
+  <nav class="bottom-nav">
+    <button class="nav-item active">
+      <span class="nav-item-icon">📊</span>
+      <span class="nav-item-label">Analysis</span>
+    </button>
+    <button class="nav-fab" id="nav-fab-btn" title="Quick Predict">+</button>
+    <button class="nav-item" id="nav-manual-btn">
+      <span class="nav-item-icon">📝</span>
+      <span class="nav-item-label">Manual</span>
+    </button>
+  </nav>
 
   <script src="app.js"></script>
 </body>
