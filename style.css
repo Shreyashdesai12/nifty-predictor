@@ -430,6 +430,31 @@ main {
   color: var(--text-muted);
 }
 
+.confidence-text {
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1.5px solid var(--border);
+  letter-spacing: 0.5px;
+}
+
+.surety-guaranteed {
+  color: var(--green-dark);
+}
+
+.surety-buy {
+  color: var(--blue);
+}
+
+.surety-risky {
+  color: var(--yellow);
+}
+
+.surety-danger {
+  color: var(--red);
+}
+
 /* Price Grid */
 .price-grid {
   display: grid;
