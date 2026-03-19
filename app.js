@@ -485,99 +485,97 @@ function displayResult(result, mode) {
     const card = $('result-card');
     card.classList.remove('hidden');
 
-    // Direction banner
-    const banner = $('result-banner');
-    banner.className = `result-banner ${result.direction.toLowerCase()}`;
-    $('direction-arrow').textContent = result.direction === 'UP' ? '▲' : '▼';
-    $('direction-label').textContent = result.direction;
-    $('direction-sub').textContent =
+    // Direction top
+    const dirIcon = $('dir-icon');
+    dirIcon.textContent = result.direction === 'UP' ? '▲' : '▼';
+    dirIcon.className = `dir-icon ${result.direction.toLowerCase()}`;
+    const dirLabel = $('dir-label');
+    dirLabel.textContent = result.direction;
+    dirLabel.className = `dir-label ${result.direction.toLowerCase()}`;
+    $('dir-sub').textContent =
         mode === 'tomorrow' ? 'Predicted for tomorrow' : 'Current market signal';
 
-    // Confidence ring (r=12, circumference = 2*PI*12 ≈ 75.4)
-    const circumference = 2 * Math.PI * 12;
+    // Confidence ring — number embedded inside SVG <tspan>
+    const circumference = 2 * Math.PI * 18; // r=18, ≈113.1
     const offset = circumference * (1 - result.confidence / 100);
     const ringFill = $('ring-fill');
     ringFill.className = `ring-fill ${result.direction.toLowerCase()}`;
-    setTimeout(() => {
-        ringFill.style.strokeDashoffset = offset;
-    }, 50);
-    $('confidence-val').textContent = result.confidence;
+    setTimeout(() => { ringFill.style.strokeDashoffset = offset; }, 50);
+    const confVal = $('confidence-val');
+    if (confVal) confVal.textContent = result.confidence;
+    const confLabel = $('conf-label');
+    if (confLabel) confLabel.textContent = result.confidence + '%';
 
-    // Surety Text
+    // Surety bar
     const confTextEl = $('confidence-text');
-    let suretyClass, suretyText;
     const action = result.direction === 'UP' ? 'BUY' : 'SELL';
-
+    let suretyClass, suretyText;
     if (result.confidence >= 90) {
-        suretyText = `GUARANTEED ${action}`;
-        suretyClass = 'surety-guaranteed';
+        suretyText = `✅ GUARANTEED ${action}`;
+        suretyClass = 'surety-bar surety-guaranteed';
     } else if (result.confidence >= 80) {
-        suretyText = `STRONG ${action}`;
-        suretyClass = 'surety-buy';
+        suretyText = `💪 STRONG ${action}`;
+        suretyClass = 'surety-bar surety-buy';
     } else if (result.confidence >= 70) {
-        suretyText = `RISKY ${action}`;
-        suretyClass = 'surety-risky';
+        suretyText = `⚠️ RISKY ${action}`;
+        suretyClass = 'surety-bar surety-risky';
     } else {
-        suretyText = `DANGER / AVOID`;
-        suretyClass = 'surety-danger';
+        suretyText = `🚫 DANGER / AVOID`;
+        suretyClass = 'surety-bar surety-danger';
     }
+    if (confTextEl) { confTextEl.textContent = suretyText; confTextEl.className = suretyClass; }
 
-    if (confTextEl) {
-        confTextEl.textContent = suretyText;
-        confTextEl.className = `confidence-text ${suretyClass}`;
-    }
-
-    // Price grid
-    const priceGrid = $('price-grid');
-    priceGrid.classList.remove('hidden');
-
+    // KV rows
     $('prev-close').textContent = formatPrice(result.spotClose);
     $('predicted-close').textContent = formatPrice(result.predictedClose);
-
-    const changeEl = $('predicted-change');
     const changePct = result.expectedPct;
     const changeSign = changePct >= 0 ? '+' : '';
-    changeEl.textContent = `${changeSign}${changePct}% (${changeSign}${result.pointMove} pts)`;
-    changeEl.className = `price-cell-change ${result.direction.toLowerCase()}`;
-
+    const changeEl = $('predicted-change');
+    changeEl.textContent = `${changeSign}${changePct}%`;
+    changeEl.className = `change-pill ${result.direction.toLowerCase()}`;
     $('sure-hit').textContent = formatPrice(result.sureHitLevel);
 
-    // Live result section
+    // Live result
     if (mode === 'live') {
         $('live-result').classList.remove('hidden');
         const signalText = getLiveSignalText(result);
         $('live-signal').innerHTML = signalText.signal;
-        $('live-signal').style.color =
-            result.direction === 'UP' ? 'var(--green)' : 'var(--red)';
+        $('live-signal').style.color = result.direction === 'UP' ? 'var(--green)' : 'var(--red)';
         $('live-action').textContent = signalText.action;
         $('live-detail').textContent = signalText.detail;
     } else {
         $('live-result').classList.add('hidden');
     }
 
-    // Signal breakdown
+    // Signal steps
     const stepsContainer = $('signal-steps');
     stepsContainer.innerHTML = '';
-    for (const sig of result.signals) {
+    result.signals.forEach(sig => {
         const step = document.createElement('div');
         step.className = `signal-step ${sig.cls || ''}`;
-        step.innerHTML = `
-      <span class="step-layer">${sig.layer}</span>
-      <span class="step-detail">${sig.detail}</span>
-    `;
+        step.innerHTML = `<span class="step-layer">${sig.layer}</span><span class="step-detail">${sig.detail}</span>`;
         stepsContainer.appendChild(step);
-    }
+    });
+
+    // Breakdown badge count
+    const badge = $('breakdown-count');
+    if (badge) badge.textContent = result.signals.length;
 
     // Auto-open breakdown
     $('breakdown-content').classList.add('open');
-    document.querySelector('.breakdown-title .toggle-icon').classList.add('open');
+    const chevron = document.querySelector('.breakdown-toggle .chevron-icon');
+    if (chevron) chevron.classList.add('open');
 
-    // Update timestamp
-    $('last-updated').textContent = `Last analyzed: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+    // Timestamp
+    $('last-updated').textContent =
+        `Last analyzed: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
 
-    // Scroll to result
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+
+// Confidence ring (r=12, circumference = 2*PI*12 ≈ 75.4)
+
 
 function getLiveSignalText(result) {
     const dir = result.direction;
@@ -750,7 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── Toggle Manual Form ───
     $('toggle-manual').addEventListener('click', () => {
         const form = $('manual-form');
-        const icon = $('manual-toggle-icon');
+        const icon = $('manual-chevron');
         if (form.classList.contains('hidden')) {
             form.classList.remove('hidden');
             icon.classList.add('open');
@@ -760,14 +758,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ─── NAV FAB → open manual form directly ───
+    const navFab = $('nav-fab-btn');
+    if (navFab) {
+        navFab.addEventListener('click', () => {
+            const form = $('manual-form');
+            const icon = $('manual-chevron');
+            form.classList.remove('hidden');
+            icon.classList.add('open');
+            document.querySelector('.manual-card').scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+
+    // ─── Bottom nav manual button ───
+    const navManual = $('nav-manual-btn');
+    if (navManual) {
+        navManual.addEventListener('click', () => {
+            const form = $('manual-form');
+            const icon = $('manual-chevron');
+            form.classList.remove('hidden');
+            icon.classList.add('open');
+            document.querySelector('.manual-card').scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+
     // ─── Toggle Signal Breakdown ───
     $('toggle-breakdown').addEventListener('click', () => {
         const content = $('breakdown-content');
-        const icon = document.querySelector('.breakdown-title .toggle-icon');
+        const icon = document.querySelector('.breakdown-toggle .chevron-icon');
         content.classList.toggle('open');
-        icon.classList.toggle('open');
+        if (icon) icon.classList.toggle('open');
     });
 });
+
 
 
 // ===================================================================
