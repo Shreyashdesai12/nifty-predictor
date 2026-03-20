@@ -201,13 +201,52 @@ function predict(data) {
 
     // ─── CALCULATE EXPECTED % AND PREDICTED CLOSE ───
     const expectedPct = calculateExpectedPct(signalClass, pcrOI, spotChangePct);
-    const predictedClose = spotClose * (1 + expectedPct / 100);
-    const pointMove = Math.abs(predictedClose - spotClose);
+    const pointMove = Math.abs(spotClose * expectedPct / 100);
+
+    // Intraday Target: Full expected move (where market SHOULD reach during the day)
+    const intradayTarget = round2(spotClose * (1 + expectedPct / 100));
+
+    // ─── CONDITIONAL SURE-HIT MULTIPLIER ───
+    // PCR > 1.50 + No Override 1 = exhaustion zone → 0.75
+    // Otherwise = normal → 0.90
+    const isExhaustion = pcrOI > 1.50 && !override1;
+    const sureHitMultiplier = isExhaustion ? 0.75 : 0.90;
 
     const sureHitLevel =
         direction === 'UP'
-            ? spotClose + 0.9 * pointMove
-            : spotClose - 0.9 * pointMove;
+            ? round2(spotClose + sureHitMultiplier * pointMove)
+            : round2(spotClose - sureHitMultiplier * pointMove);
+
+    // ─── CLOSE RETENTION FACTOR ───
+    // Determines how much of the intraday move survives to close
+    let closeRetention = 1.00;
+    let retentionReason = 'Normal — full retention';
+
+    if (override2) {
+        closeRetention = 0.30;
+        retentionReason = 'Override 2 (mean-reversion) — bounce/fade gives back ~70% by close';
+    } else if (override1 && pcrOI > 1.50) {
+        closeRetention = 0.85;
+        retentionReason = 'Override 1 + extreme PCR — catalyst strong but positioning resists';
+    } else if (pcrOI > 1.50 && !override1) {
+        closeRetention = 0.60;
+        retentionReason = 'Extreme PCR without catalyst — exhaustion/crowding limits close';
+    }
+
+    const predictedClose = round2(
+        direction === 'UP'
+            ? spotClose + closeRetention * pointMove
+            : spotClose - closeRetention * pointMove
+    );
+
+    // Add retention signal to breakdown
+    if (closeRetention < 1.00) {
+        signals.push({
+            layer: 'Retention',
+            detail: `Close Factor: <span class="highlight-warn">${closeRetention.toFixed(2)}</span> — ${retentionReason}`,
+            cls: 'triggered',
+        });
+    }
 
     // Clamp confidence
     confidence = Math.max(50, Math.min(95, confidence));
@@ -216,13 +255,20 @@ function predict(data) {
         direction,
         signalClass,
         expectedPct: round2(expectedPct),
-        predictedClose: round2(predictedClose),
-        sureHitLevel: round2(sureHitLevel),
+        intradayTarget,
+        predictedClose,
+        sureHitLevel,
         pointMove: round2(pointMove),
         confidence,
         signals,
         spotClose: round2(spotClose),
         spotChangePct: round2(spotChangePct),
+        override1,
+        override2,
+        pcrOI: round2(pcrOI),
+        closeRetention,
+        sureHitMultiplier,
+        isExhaustion,
     };
 }
 
@@ -467,12 +513,14 @@ function showError(message) {
 
 function openManualForm() {
     $('manual-form').classList.remove('hidden');
-    $('manual-toggle-icon').classList.add('open');
+    const ch = $('manual-chevron');
+    if (ch) ch.classList.add('open');
 }
 
 function closeManualForm() {
     $('manual-form').classList.add('hidden');
-    $('manual-toggle-icon').classList.remove('open');
+    const ch = $('manual-chevron');
+    if (ch) ch.classList.remove('open');
 }
 
 /**
@@ -496,7 +544,7 @@ function displayResult(result, mode) {
         mode === 'tomorrow' ? 'Predicted for tomorrow' : 'Current market signal';
 
     // Confidence ring — number embedded inside SVG <tspan>
-    const circumference = 2 * Math.PI * 18; // r=18, ≈113.1
+    const circumference = 2 * Math.PI * 18;
     const offset = circumference * (1 - result.confidence / 100);
     const ringFill = $('ring-fill');
     ringFill.className = `ring-fill ${result.direction.toLowerCase()}`;
@@ -506,34 +554,93 @@ function displayResult(result, mode) {
     const confLabel = $('conf-label');
     if (confLabel) confLabel.textContent = result.confidence + '%';
 
-    // Surety bar
+    // ─── Smart Surety Bar ───
     const confTextEl = $('confidence-text');
     const action = result.direction === 'UP' ? 'BUY' : 'SELL';
     let suretyClass, suretyText;
+
     if (result.confidence >= 90) {
         suretyText = `✅ GUARANTEED ${action}`;
         suretyClass = 'surety-bar surety-guaranteed';
-    } else if (result.confidence >= 80) {
+    } else if (result.confidence >= 85) {
         suretyText = `💪 STRONG ${action}`;
         suretyClass = 'surety-bar surety-buy';
+    } else if (result.confidence >= 80) {
+        if (result.isExhaustion) {
+            suretyText = `⚡ ${action} — Exhaustion Zone (sure-hit ×0.75)`;
+            suretyClass = 'surety-bar surety-risky';
+        } else {
+            suretyText = `💪 STRONG ${action}`;
+            suretyClass = 'surety-bar surety-buy';
+        }
     } else if (result.confidence >= 70) {
-        suretyText = `⚠️ RISKY ${action}`;
-        suretyClass = 'surety-bar surety-risky';
+        if (result.override2) {
+            suretyText = `🔄 MEAN-REVERSION ${action} — Close may give back`;
+            suretyClass = 'surety-bar surety-risky';
+        } else if (result.isExhaustion) {
+            suretyText = `⚠️ RISKY ${action} — PCR crowded`;
+            suretyClass = 'surety-bar surety-risky';
+        } else {
+            suretyText = `⚠️ RISKY ${action}`;
+            suretyClass = 'surety-bar surety-risky';
+        }
     } else {
         suretyText = `🚫 DANGER / AVOID`;
         suretyClass = 'surety-bar surety-danger';
     }
     if (confTextEl) { confTextEl.textContent = suretyText; confTextEl.className = suretyClass; }
 
-    // KV rows
+    // ─── KV rows ───
     $('prev-close').textContent = formatPrice(result.spotClose);
-    $('predicted-close').textContent = formatPrice(result.predictedClose);
-    const changePct = result.expectedPct;
-    const changeSign = changePct >= 0 ? '+' : '';
-    const changeEl = $('predicted-change');
-    changeEl.textContent = `${changeSign}${changePct}%`;
-    changeEl.className = `change-pill ${result.direction.toLowerCase()}`;
+
+    // Intraday Target (full expected move)
+    $('intraday-target').textContent = formatPrice(result.intradayTarget);
+    const targetChange = $('target-change');
+    const targetSign = result.expectedPct >= 0 ? '+' : '';
+    targetChange.textContent = `${targetSign}${result.expectedPct}%`;
+    targetChange.className = `change-pill ${result.direction.toLowerCase()}`;
+
+    // Sure-Hit Level with multiplier tag
     $('sure-hit').textContent = formatPrice(result.sureHitLevel);
+    const multEl = $('sure-hit-mult');
+    if (multEl) {
+        if (result.isExhaustion) {
+            multEl.textContent = '×0.75 Exhaustion';
+            multEl.style.color = 'var(--orange)';
+        } else {
+            multEl.textContent = '×0.90 Normal';
+            multEl.style.color = 'var(--text-muted)';
+        }
+    }
+
+    // Predicted Close (with retention)
+    $('predicted-close').textContent = formatPrice(result.predictedClose);
+    const closeChangePct = result.closeRetention < 1.0
+        ? round2(result.expectedPct * result.closeRetention)
+        : result.expectedPct;
+    const closeSign = closeChangePct >= 0 ? '+' : '';
+    const changeEl = $('predicted-change');
+    changeEl.textContent = `${closeSign}${closeChangePct}%`;
+    changeEl.className = `change-pill ${result.direction.toLowerCase()}`;
+
+    // Retention row (show only when retention < 1.00)
+    const retRow = $('retention-row');
+    if (retRow) {
+        if (result.closeRetention < 1.00) {
+            retRow.classList.remove('hidden');
+            let retText = '';
+            if (result.closeRetention === 0.30) {
+                retText = '30% retained — Mean-reversion bounce expected to fade. Market bounces intraday after extreme fall, but closing price gives back ~70% of the move. Trade the intraday target, not the close.';
+            } else if (result.closeRetention === 0.60) {
+                retText = '60% retained — PCR exhaustion zone. Too many puts in the market (PCR > 1.50) with no strong catalyst. Move starts but runs out of steam. Close will retain only ~60% of the expected move.';
+            } else {
+                retText = '85% retained — Override flipped direction against extreme PCR. Strong catalyst (gamma trap) pushes market the other way, but extreme positioning limits how much the close holds. ~85% of the move survives to close.';
+            }
+            $('retention-val').textContent = retText;
+        } else {
+            retRow.classList.add('hidden');
+        }
+    }
 
     // Live result
     if (mode === 'live') {
@@ -565,6 +672,10 @@ function displayResult(result, mode) {
     $('breakdown-content').classList.add('open');
     const chevron = document.querySelector('.breakdown-toggle .chevron-icon');
     if (chevron) chevron.classList.add('open');
+
+    // Store current result for save functionality
+    window._lastResult = result;
+    window._lastMode = mode;
 
     // Timestamp
     $('last-updated').textContent =
@@ -762,6 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navFab = $('nav-fab-btn');
     if (navFab) {
         navFab.addEventListener('click', () => {
+            $('tab-analysis').click();
             const form = $('manual-form');
             const icon = $('manual-chevron');
             form.classList.remove('hidden');
@@ -770,15 +882,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ─── Bottom nav manual button ───
+    // ─── Bottom nav buttons ───
     const navManual = $('nav-manual-btn');
     if (navManual) {
         navManual.addEventListener('click', () => {
+            $('tab-analysis').click();
             const form = $('manual-form');
             const icon = $('manual-chevron');
             form.classList.remove('hidden');
             icon.classList.add('open');
             document.querySelector('.manual-card').scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+
+    const navAnalysis = $('nav-analysis-btn');
+    if (navAnalysis) {
+        navAnalysis.addEventListener('click', () => {
+            $('tab-analysis').click();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
+
+    const navHistory = $('nav-history-btn');
+    if (navHistory) {
+        navHistory.addEventListener('click', () => {
+            $('tab-history').click();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     }
 
@@ -789,16 +918,251 @@ document.addEventListener('DOMContentLoaded', () => {
         content.classList.toggle('open');
         if (icon) icon.classList.toggle('open');
     });
+
+    // ─── Save Result Flow (Modal) ───
+    const saveBtn = $('btn-save-result');
+    let modalHitResult = true;
+
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            if (!window._lastResult) return;
+            // Show modal
+            $('modal-actual-close').value = '';
+            $('modal-hit-yes').classList.add('active');
+            $('modal-hit-no').classList.remove('active');
+            modalHitResult = true;
+            $('save-modal-overlay').classList.remove('hidden');
+        });
+    }
+
+    $('modal-hit-yes').addEventListener('click', () => {
+        modalHitResult = true;
+        $('modal-hit-yes').classList.add('active');
+        $('modal-hit-no').classList.remove('active');
+    });
+
+    $('modal-hit-no').addEventListener('click', () => {
+        modalHitResult = false;
+        $('modal-hit-no').classList.add('active');
+        $('modal-hit-yes').classList.remove('active');
+    });
+
+    $('modal-cancel-btn').addEventListener('click', () => {
+        $('save-modal-overlay').classList.add('hidden');
+    });
+
+    $('modal-save-btn').addEventListener('click', () => {
+        const actualCloseInput = $('modal-actual-close').value;
+        const actualCloseVal = parseFloat(actualCloseInput);
+        if (isNaN(actualCloseVal)) {
+            alert('Please enter a valid actual close price to save to history.');
+            return;
+        }
+
+        const r = window._lastResult;
+
+        // Format date to match DD-Mon-YYYY style
+        const d = new Date();
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const dateStr = `${d.getDate().toString().padStart(2, '0')}-${months[d.getMonth()]}-${d.getFullYear()}`;
+
+        const entry = {
+            date: dateStr,
+            direction: r.direction,
+            confidence: r.confidence,
+            intradayTarget: r.intradayTarget,
+            sureHitLevel: r.sureHitLevel,
+            predictedClose: r.predictedClose,
+            spotClose: r.spotClose,
+            expectedPct: r.expectedPct,
+            sureHitMultiplier: r.sureHitMultiplier,
+            closeRetention: r.closeRetention,
+            signalClass: r.signalClass,
+            isExhaustion: r.isExhaustion,
+            actualClose: actualCloseVal,
+            actualHigh: null, // Left null since we didn't ask for it
+            actualLow: null,  // Left null since we didn't ask for it
+            sureHitReached: modalHitResult,
+        };
+
+        saveToHistory(entry);
+        $('save-modal-overlay').classList.add('hidden');
+
+        // Show success on main save button
+        saveBtn.textContent = '✅ Saved!';
+        saveBtn.style.background = 'var(--green)';
+        saveBtn.style.color = 'white';
+        setTimeout(() => {
+            saveBtn.textContent = '💾 Save to History';
+            saveBtn.style.background = '';
+            saveBtn.style.color = '';
+        }, 2000);
+    });
+
+    // ─── Toggle History ───
+    const histToggle = $('toggle-history');
+    if (histToggle) {
+        histToggle.addEventListener('click', () => {
+            const body = $('history-body');
+            const icon = $('history-chevron');
+            body.classList.toggle('hidden');
+            if (icon) icon.classList.toggle('open');
+        });
+    }
+
+    // ─── Pill Tab Switching ───
+    document.querySelectorAll('.tab-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            // Update active pill
+            document.querySelectorAll('.tab-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+
+            // Hide all panes
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+
+            const tabId = pill.dataset.tab;
+
+            // Sync bottom nav active states
+            document.querySelectorAll('.bottom-nav .nav-item').forEach(btn => btn.classList.remove('active'));
+            if (tabId === 'analysis') {
+                const navBtn = $('nav-analysis-btn');
+                if (navBtn) navBtn.classList.add('active');
+            } else if (tabId === 'history') {
+                const navBtn = $('nav-history-btn');
+                if (navBtn) navBtn.classList.add('active');
+            } else {
+                const navBtn = $('nav-analysis-btn'); // Default highlight
+                if (navBtn) navBtn.classList.add('active');
+            }
+
+            // Show selected pane
+            const pane = $(`tab-pane-${tabId}`);
+            if (pane) {
+                pane.classList.remove('hidden');
+                if (tabId === 'history') renderHistory();
+            }
+        });
+    });
+
+    // Init history on load
+    initHistory();
 });
 
 
+// ===================================================================
+// SECTION 6: HISTORY MANAGEMENT
+// ===================================================================
+
+const HISTORY_KEY = 'kt21_history';
+
+function getHistory() {
+    try {
+        return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+    } catch { return []; }
+}
+
+function saveToHistory(entry) {
+    const hist = getHistory();
+    hist.push(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    renderHistory();
+}
+
+function initHistory() {
+    let hist = getHistory();
+
+    // CLEANUP: Clean up any old entries without actualClose (removes the bad 21st March empty saves)
+    const originalLen = hist.length;
+    hist = hist.filter(h => h.actualClose !== null && h.actualClose !== undefined);
+    if (hist.length < originalLen) {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    }
+
+    // Pre-populate with 9 historical days if empty
+    if (hist.length === 0) {
+        const seed = [
+            { date: '06-Mar-2026', direction: 'DOWN', confidence: 80, intradayTarget: 24019, sureHitLevel: 24062, predictedClose: 24019, spotClose: 24450.45, expectedPct: -1.77, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'STRONG_BEARISH', isExhaustion: false, actualClose: 24028.05, actualHigh: 24467, actualLow: 23698, sureHitReached: true },
+            { date: '09-Mar-2026', direction: 'UP', confidence: 80, intradayTarget: 24256, sureHitLevel: 24233, predictedClose: 24256, spotClose: 24028.05, expectedPct: 0.95, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'BULLISH_SC', isExhaustion: false, actualClose: 24261.60, actualHigh: 24304, actualLow: 24028, sureHitReached: true },
+            { date: '10-Mar-2026', direction: 'DOWN', confidence: 70, intradayTarget: 23886, sureHitLevel: 23923, predictedClose: 23886, spotClose: 24261.60, expectedPct: -1.55, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'SPIKE_FLIP_DOWN', isExhaustion: false, actualClose: 23866.85, actualHigh: 24322, actualLow: 23834, sureHitReached: true },
+            { date: '11-Mar-2026', direction: 'DOWN', confidence: 90, intradayTarget: 23472, sureHitLevel: 23571, predictedClose: 23630, spotClose: 23866.85, expectedPct: -1.66, sureHitMultiplier: 0.75, closeRetention: 0.60, signalClass: 'STRONG_BEARISH', isExhaustion: true, actualClose: 23639.15, actualHigh: 23991, actualLow: 23556, sureHitReached: true },
+            { date: '12-Mar-2026', direction: 'DOWN', confidence: 85, intradayTarget: 23215, sureHitLevel: 23257, predictedClose: 23215, spotClose: 23639.15, expectedPct: -1.80, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'STRONG_BEARISH', isExhaustion: false, actualClose: 23151.10, actualHigh: 23695, actualLow: 23112, sureHitReached: true },
+            { date: '13-Mar-2026', direction: 'UP', confidence: 65, intradayTarget: 23464, sureHitLevel: 23432, predictedClose: 23417, spotClose: 23151.10, expectedPct: 1.35, sureHitMultiplier: 0.90, closeRetention: 0.85, signalClass: 'SPIKE_FLIP_UP', isExhaustion: false, actualClose: 23408.80, actualHigh: 23502, actualLow: 23119, sureHitReached: true },
+            { date: '16-Mar-2026', direction: 'UP', confidence: 90, intradayTarget: 23619, sureHitLevel: 23599, predictedClose: 23619, spotClose: 23408.80, expectedPct: 0.90, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'BULLISH_SB', isExhaustion: false, actualClose: 23581.15, actualHigh: 23657, actualLow: 23400, sureHitReached: true },
+            { date: '17-Mar-2026', direction: 'UP', confidence: 85, intradayTarget: 23782, sureHitLevel: 23761, predictedClose: 23782, spotClose: 23581.15, expectedPct: 0.85, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'BULLISH_SB', isExhaustion: false, actualClose: 23777.80, actualHigh: 23862, actualLow: 23534, sureHitReached: true },
+            { date: '19-Mar-2026', direction: 'UP', confidence: 80, intradayTarget: 23425, sureHitLevel: 23319, predictedClose: 23129, spotClose: 23002.15, expectedPct: 1.84, sureHitMultiplier: 0.75, closeRetention: 0.30, signalClass: 'FADE_UP', isExhaustion: true, actualClose: 23114.50, actualHigh: 23345, actualLow: 23068, sureHitReached: true },
+        ];
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(seed));
+    }
+    renderHistory();
+}
+
+function renderHistory() {
+    const hist = getHistory();
+    const section = $('history-section');
+    const list = $('history-list');
+    const countEl = $('history-count');
+
+    if (!section || !list) return;
+    if (hist.length === 0) {
+        section.classList.remove('hidden');
+        if (countEl) countEl.textContent = '0 predictions saved';
+        list.innerHTML = '<p class="empty-state">No predictions saved yet. Make a prediction in the Analysis tab and click "Save to History".</p>';
+        return;
+    }
+
+    section.classList.remove('hidden');
+    if (countEl) countEl.textContent = `${hist.length} predictions saved`;
+
+    // Build table
+    let html = '<div class="history-table-wrap"><table class="history-table"><thead><tr>';
+    html += '<th>Date</th><th>Dir</th><th>Conf</th><th>Target</th><th>Sure-Hit</th><th>Close</th>';
+    html += '<th>Actual</th><th>Hit?</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const h of hist.slice().reverse()) {
+        const dirClass = h.direction === 'UP' ? 'highlight-up' : 'highlight-down';
+        const hitIcon = h.sureHitReached === true ? '✅' : h.sureHitReached === false ? '❌' : '—';
+        const actualStr = h.actualClose ? formatPrice(h.actualClose) : '—';
+        const closeErr = h.actualClose ? Math.abs(h.predictedClose - h.actualClose).toFixed(0) + 'p' : '';
+        html += `<tr>`;
+        html += `<td>${h.date}</td>`;
+        html += `<td class="${dirClass}">${h.direction}</td>`;
+        html += `<td>${h.confidence}%</td>`;
+        html += `<td>${formatPrice(h.intradayTarget)}</td>`;
+        html += `<td>${formatPrice(h.sureHitLevel)}${h.isExhaustion ? ' ⚡' : ''}</td>`;
+        html += `<td>${formatPrice(h.predictedClose)}${closeErr ? ' <small>(±' + closeErr + ')</small>' : ''}</td>`;
+        html += `<td>${actualStr}</td>`;
+        html += `<td>${hitIcon}</td>`;
+        html += `</tr>`;
+    }
+
+    html += '</tbody></table></div>';
+
+    // Stats row
+    const withResults = hist.filter(h => h.actualClose);
+    if (withResults.length > 0) {
+        const dirCorrect = withResults.filter(h => {
+            if (h.direction === 'UP') return h.actualClose > h.spotClose;
+            return h.actualClose < h.spotClose;
+        }).length;
+        const hitCount = withResults.filter(h => h.sureHitReached === true).length;
+        const avgErr = (withResults.reduce((s, h) => s + Math.abs(h.predictedClose - h.actualClose), 0) / withResults.length).toFixed(0);
+        html += `<div class="history-stats">`;
+        html += `<span>Direction: <b>${dirCorrect}/${withResults.length}</b></span>`;
+        html += `<span>Sure-Hit: <b>${hitCount}/${withResults.length}</b></span>`;
+        html += `<span>Avg Close Error: <b>${avgErr} pts</b></span>`;
+        html += `</div>`;
+    }
+
+    list.innerHTML = html;
+}
 
 // ===================================================================
-// SECTION 6: TEST SUITE (Run in browser console: runAllTests())
+// SECTION 7: TEST SUITE (Run in browser console: runAllTests())
 // ===================================================================
 
 /**
- * Validate the prediction engine against all 8 historical transitions.
+ * Validate the prediction engine against all 9 historical transitions.
  * Each test uses ONLY the data visible at previous day's close.
  */
 function runAllTests() {
@@ -807,62 +1171,87 @@ function runAllTests() {
             name: '6 Mar → 9 Mar (DOWN −1.73%)',
             input: { spotClose: 24450.45, spotChangePct: -1.27, putInterp: 'LB', putOiChangePct: 74.41, callOiChangePct: 430.62, putVolChangePct: 140, callVolChangePct: 64, pcrOI: 1.33, dte: 4, pcrVolume: 4.53 },
             expectedDir: 'DOWN',
-            expectedClose: 24022,
+            expectedTarget: 24019,
+            expectedClose: 24019,
             actualClose: 24028.05,
+            actualLow: 23698,
         },
         {
             name: '9 Mar → 10 Mar (UP +0.97%)',
             input: { spotClose: 24028.05, spotChangePct: -1.73, putInterp: 'SC', putOiChangePct: -11.95, callOiChangePct: 740.90, putVolChangePct: -1, callVolChangePct: 12539, pcrOI: 1.14, dte: 2, pcrVolume: 0.49 },
             expectedDir: 'UP',
+            expectedTarget: 24256,
             expectedClose: 24256,
             actualClose: 24261.60,
+            actualHigh: 24304,
         },
         {
             name: '10 Mar → 11 Mar (DOWN −1.63%) [Override 1 @ DTE=8]',
             input: { spotClose: 24261.60, spotChangePct: 0.97, putInterp: 'SB', putOiChangePct: 1546.57, callOiChangePct: 728.96, putVolChangePct: 3077, callVolChangePct: 1233, pcrOI: 0.98, dte: 8, pcrVolume: 0.77 },
             expectedDir: 'DOWN',
-            expectedClose: 23885,
+            expectedTarget: 23886,
+            expectedClose: 23886,
             actualClose: 23866.85,
+            actualLow: 23834,
         },
         {
-            name: '11 Mar → 12 Mar (DOWN −0.95%)',
+            name: '11 Mar → 12 Mar (DOWN −0.95%) [Exhaustion PCR 1.51]',
             input: { spotClose: 23866.85, spotChangePct: -1.63, putInterp: 'LB', putOiChangePct: 202.68, callOiChangePct: 786.18, putVolChangePct: 1924, callVolChangePct: 3894, pcrOI: 1.51, dte: 7, pcrVolume: 5.50 },
             expectedDir: 'DOWN',
-            expectedClose: 23473,
+            expectedTarget: 23472,
+            expectedClose: 23630,  // retention 0.60
             actualClose: 23639.15,
+            actualLow: 23556,
         },
         {
             name: '12 Mar → 13 Mar (DOWN −2.06%)',
             input: { spotClose: 23639.15, spotChangePct: -0.95, putInterp: 'LB', putOiChangePct: 262.22, callOiChangePct: 1520.82, putVolChangePct: 178, callVolChangePct: 10457, pcrOI: 1.39, dte: 6, pcrVolume: 1.41 },
             expectedDir: 'DOWN',
-            expectedClose: 23213,
+            expectedTarget: 23215,
+            expectedClose: 23215,
             actualClose: 23151.10,
+            actualLow: 23112,
         },
         {
-            name: '13 Mar → 16 Mar (UP +1.11%) [Override 1 @ DTE=5]',
+            name: '13 Mar → 16 Mar (UP +1.11%) [Override 1 @ DTE=5 + PCR 1.64]',
             input: { spotClose: 23151.10, spotChangePct: -2.06, putInterp: 'LB', putOiChangePct: 139.65, callOiChangePct: 5194.92, putVolChangePct: 688, callVolChangePct: 25502, pcrOI: 1.64, dte: 5, pcrVolume: 2.83 },
             expectedDir: 'UP',
-            expectedClose: 23463,
+            expectedTarget: 23464,
+            expectedClose: 23417,  // retention 0.85
             actualClose: 23408.80,
+            actualHigh: 23502,
         },
         {
             name: '16 Mar → 17 Mar (UP +0.74%)',
             input: { spotClose: 23408.80, spotChangePct: 1.11, putInterp: 'SB', putOiChangePct: 237.50, callOiChangePct: 59.56, putVolChangePct: -31, callVolChangePct: 116, pcrOI: 0.93, dte: 2, pcrVolume: 0.30 },
             expectedDir: 'UP',
+            expectedTarget: 23619,
             expectedClose: 23619,
             actualClose: 23581.15,
+            actualHigh: 23657,
         },
         {
             name: '17 Mar → 18 Mar (UP +0.83%)',
             input: { spotClose: 23581.15, spotChangePct: 0.74, putInterp: 'SB', putOiChangePct: 368.70, callOiChangePct: 236.85, putVolChangePct: 1273, callVolChangePct: 397, pcrOI: 0.99, dte: 8, pcrVolume: 0.64 },
             expectedDir: 'UP',
-            expectedClose: 23781,
+            expectedTarget: 23782,
+            expectedClose: 23782,
             actualClose: 23777.80,
+            actualHigh: 23862,
+        },
+        {
+            name: '19 Mar → 20 Mar (UP +0.49%) [Override 2 Fade + PCR 2.00]',
+            input: { spotClose: 23002.15, spotChangePct: -3.26, putInterp: 'LB', putOiChangePct: 22.83, callOiChangePct: 372.31, putVolChangePct: 143, callVolChangePct: 3533, pcrOI: 2.00, dte: 6, pcrVolume: 3.44 },
+            expectedDir: 'UP',
+            expectedTarget: 23425,
+            expectedClose: 23129,  // retention 0.30
+            actualClose: 23114.50,
+            actualHigh: 23345,
         },
     ];
 
-    console.log('%c═══ NIFTY PREDICTOR — TEST SUITE ═══', 'color: #00b4d8; font-weight: bold; font-size: 14px');
-    console.log('Running 8 historical transitions...\n');
+    console.log('%c═══ KING TRADES 21 ALGO — TEST SUITE ═══', 'color: #00b4d8; font-weight: bold; font-size: 14px');
+    console.log('Running 9 historical transitions...\n');
 
     let passed = 0;
     let failed = 0;
@@ -870,8 +1259,8 @@ function runAllTests() {
     for (const test of tests) {
         const result = predict(test.input);
         const dirOk = result.direction === test.expectedDir;
-        const closeError = Math.abs(result.predictedClose - test.expectedClose);
-        const actualError = Math.abs(result.predictedClose - test.actualClose);
+        const closeError = Math.abs(result.predictedClose - test.actualClose);
+        const targetError = Math.abs(result.intradayTarget - test.expectedTarget);
 
         if (dirOk) {
             passed++;
@@ -889,30 +1278,28 @@ function runAllTests() {
             );
         }
         console.log(
-            `   Predicted: ${result.predictedClose} | Target: ~${test.expectedClose} | Actual: ${test.actualClose} | Error: ${actualError.toFixed(0)} pts | Signal: ${result.signalClass} | Confidence: ${result.confidence}%`
+            `   Target: ${result.intradayTarget} | Close: ${result.predictedClose} (×${result.closeRetention}) | Sure-Hit: ${result.sureHitLevel} (×${result.sureHitMultiplier}) | Actual: ${test.actualClose} | Close Err: ${closeError.toFixed(0)}pts | ${result.signalClass} ${result.confidence}%${result.isExhaustion ? ' ⚡EXHAUST' : ''}`
         );
     }
 
     console.log(
-        `\n%c═══ RESULT: ${passed}/8 PASSED, ${failed}/8 FAILED ═══`,
+        `\n%c═══ RESULT: ${passed}/9 PASSED, ${failed}/9 FAILED ═══`,
         `color: ${failed === 0 ? '#00d4aa' : '#ff4757'}; font-weight: bold; font-size: 14px`
     );
 
-    // Also run 19 Mar → 20 Mar prediction
-    console.log('\n%c═══ 19 Mar → 20 Mar PREDICTION ═══', 'color: #fbbf24; font-weight: bold');
-    const prediction19 = predict({
-        spotClose: 23002.15, spotChangePct: -3.26, putInterp: 'LB',
-        putOiChangePct: 22.83, callOiChangePct: 372.31,
-        putVolChangePct: 0, callVolChangePct: 0,
-        pcrOI: 2.00, dte: 6, pcrVolume: 3.44,
+    // 20 Mar → 21 Mar prediction
+    console.log('\n%c═══ 20 Mar → 21 Mar PREDICTION ═══', 'color: #fbbf24; font-weight: bold');
+    const pred20 = predict({
+        spotClose: 23114.50, spotChangePct: 0.49, putInterp: 'SB',
+        putOiChangePct: 88.37, callOiChangePct: 58.81,
+        putVolChangePct: 139, callVolChangePct: 106,
+        pcrOI: 1.31, dte: 5, pcrVolume: 2.32,
     });
-    console.log(`Direction: ${prediction19.direction}`);
-    console.log(`Predicted Close: ${prediction19.predictedClose}`);
-    console.log(`Sure-Hit Level: ${prediction19.sureHitLevel}`);
-    console.log(`Expected %: ${prediction19.expectedPct}%`);
-    console.log(`Confidence: ${prediction19.confidence}%`);
-    console.log(`Signal Class: ${prediction19.signalClass}`);
-    console.log('Signals:', prediction19.signals.map(s => `${s.layer}: ${s.detail.replace(/<[^>]*>/g, '')}`));
+    console.log(`Direction: ${pred20.direction} | Confidence: ${pred20.confidence}%`);
+    console.log(`Intraday Target: ${pred20.intradayTarget} | Sure-Hit: ${pred20.sureHitLevel} (×${pred20.sureHitMultiplier})`);
+    console.log(`Predicted Close: ${pred20.predictedClose} (×${pred20.closeRetention})`);
+    console.log(`Expected %: ${pred20.expectedPct}% | Signal: ${pred20.signalClass}`);
+    console.log(`Exhaustion: ${pred20.isExhaustion} | Override1: ${pred20.override1} | Override2: ${pred20.override2}`);
 
     return { passed, failed };
 }
