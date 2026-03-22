@@ -349,6 +349,28 @@ function predict(data) {
     // Clamp confidence
     confidence = Math.max(50, Math.min(95, confidence));
 
+    let isUntested = false;
+    let untestedReason = '';
+    if (putInterp === 'LC') {
+        isUntested = true;
+        untestedReason = 'LC (Long Unwinding) has zero backtest data';
+    } else if (putInterp === 'LB' && pcrOI <= 1.05) {
+        isUntested = true;
+        untestedReason = 'LB with Bullish PCR (≤ 1.05) has zero backtest data';
+    } else if (putInterp === 'SC') {
+        isUntested = true;
+        untestedReason = 'SC (Short Covering) has insufficient backtest data';
+    }
+
+    if (isUntested) {
+        confidence = 0;
+        signals.push({
+            layer: '🚨 UNTESTED SYSTEM',
+            detail: `\u003cspan class="highlight-warn"\u003eCRITICAL BLIND SPOT\u003c/span\u003e: This specific scenario (${untestedReason}) was never encountered in the 9-day development period. The system's output is an unverified mathematical guess. Trading this is purely gambling.`,
+            cls: 'triggered'
+        });
+    }
+
     return {
         direction,
         signalClass,
@@ -371,7 +393,9 @@ function predict(data) {
         pcrDelta,
         turnoverRatio,
         compositeRatio,
-        extremeSkewWarning
+        extremeSkewWarning,
+        isUntested,
+        untestedReason
     };
 }
 
@@ -692,8 +716,21 @@ function displayResult(result, mode) {
         suretyClass = 'surety-bar surety-danger';
     }
 
-    // Phase 2 catastrophic overrides
-    if (result.ivSkew !== undefined && result.ivSkew > 4.0) {
+    // Untested market condition overrides
+    if (result.isUntested) {
+        suretyText = `⚠️ DO NOT TRADE — UNTESTED MARKET CONDITION`;
+        suretyClass = 'surety-bar surety-danger';
+        // Force UI ring to exactly 0% immediately
+        const ringFillLoc = $('ring-fill');
+        const circ = 2 * Math.PI * 18;
+        if (ringFillLoc) setTimeout(() => { ringFillLoc.style.strokeDashoffset = circ; }, 50);
+        const cv = $('confidence-val');
+        if (cv) cv.textContent = '0';
+        const cl = $('conf-label');
+        if (cl) cl.textContent = '0%';
+    }
+    // Phase 2 catastrophic overrides (if not already untested)
+    else if (result.ivSkew !== undefined && result.ivSkew > 4.0) {
         suretyText = `🔴 BLACK SWAN WARNING: IV Skew at +${result.ivSkew.toFixed(2)}. Extreme catastrophic risk.`;
         suretyClass = 'surety-bar surety-danger';
     } else if (result.extremeSkewWarning && action === 'BUY') {
