@@ -23,8 +23,11 @@ function predict(data) {
         putVolChangePct,    // Put volume % change (e.g., 140.00)
         callVolChangePct,   // Call volume % change (e.g., 64.00)
         pcrOI,              // PCR by OI (e.g., 1.33)
+        prevPcrInput,       // User explicitly defined yesterday's PCR
+        isManual,           // True if inputs came from manual form
         dte,                // Days to expiry (e.g., 5)
         pcrVolume,          // PCR by volume (optional, e.g., 4.53)
+        putIV, callIV, putVolAbs, callVolAbs, putOIAbs, callOIAbs // Phase 2 deep inputs
     } = data;
 
     const signals = [];
@@ -199,8 +202,103 @@ function predict(data) {
         }
     }
 
+    // ─── PHASE 2: DEEP ANALYTICS ADJUSTERS ───
+    let ivSkew = null;
+    let pcrDelta = null;
+    let turnoverRatio = null;
+    let compositeRatio = null;
+    let extremeSkewWarning = false;
+
+    if (putIV !== undefined && callIV !== undefined && putIV !== '' && callIV !== '') {
+        ivSkew = parseFloat(putIV) - parseFloat(callIV);
+        if (ivSkew > 2.0 && direction === 'UP') {
+            extremeSkewWarning = true;
+            signals.push({
+                layer: 'IV Skew',
+                detail: `\u003cspan class="highlight-warn"\u003e⚠️ EXTREME SKEW ALERT\u003c/span\u003e: Put IV is abnormally higher than Call IV (+${ivSkew.toFixed(2)}). Upward moves are heavily dampened by fear premium. Expect a shallower rise or resistance.`,
+            });
+        } else if (ivSkew < 0 && direction === 'UP') {
+            signals.push({
+                layer: 'IV Skew',
+                detail: `\u003cspan class="highlight-up"\u003e🚀 CLEAN AIRSPACE\u003c/span\u003e: Call IV > Put IV (${ivSkew.toFixed(2)}). No fear premium overhead. Market has severe room to run upwards.`,
+            });
+        }
+    }
+
+    let prevPcr = prevPcrInput;
+    if (prevPcr === undefined && !isManual) {
+        const prevPcrRaw = localStorage.getItem('nifty_prev_pcr');
+        if (prevPcrRaw) prevPcr = parseFloat(prevPcrRaw);
+    }
+
+    if (prevPcr !== undefined && !isNaN(prevPcr)) {
+        pcrDelta = pcrOI - prevPcr;
+        if (pcrDelta < -0.60 && direction === 'UP') {
+            confidence += 5;
+            signals.push({
+                layer: 'PCR Velocity',
+                detail: `\u003cspan class="highlight-up"\u003e📉 Fear Collapse\u003c/span\u003e (PCR dropped by ${Math.abs(pcrDelta).toFixed(2)}): Massive unwinding of bearish positions. Strongly supports bullish momentum (+5% Confidence).`,
+            });
+        } else if (pcrDelta > +0.80) {
+            signals.push({
+                layer: 'PCR Velocity',
+                detail: `\u003cspan class="highlight-down"\u003e🌋 Fear Explosion\u003c/span\u003e (PCR spiked by +${pcrDelta.toFixed(2)}): Market panicking violently. Mean-reversion (Override 2) is extremely likely in the next 24 hours.`,
+            });
+        }
+    }
+    localStorage.setItem('nifty_prev_pcr', pcrOI);
+
+    if (putVolAbs && callVolAbs && putOIAbs && callOIAbs) {
+        const putTurnover = parseFloat(putVolAbs) / parseFloat(putOIAbs);
+        const callTurnover = parseFloat(callVolAbs) / parseFloat(callOIAbs);
+        turnoverRatio = putTurnover / callTurnover;
+
+        if (turnoverRatio > 3.0) {
+            signals.push({
+                layer: 'Turnover Conviction',
+                detail: `\u003cspan class="highlight-down"\u003e💼 Institutional Bearish Conviction\u003c/span\u003e: Put activity is ${turnoverRatio.toFixed(2)}x higher than Calls. Smart money is aggressively deploying fresh capital into Puts, not just holding.`,
+            });
+        } else if (turnoverRatio < 0.50 && direction === 'UP') {
+            confidence += 3;
+            signals.push({
+                layer: 'Turnover Conviction',
+                detail: `\u003cspan class="highlight-up"\u003e💼 Institutional Bullish Conviction\u003c/span\u003e: Call activity is dominating Puts (Ratio: ${turnoverRatio.toFixed(2)}). Smart money is aggressively deploying fresh capital into Calls (+3% Confidence).`,
+            });
+        }
+    }
+
+    if (pcrVolume !== undefined && pcrVolume !== null && !isNaN(pcrVolume)) {
+        compositeRatio = parseFloat(pcrVolume) / pcrOI;
+    }
+
+    if (dte === 2 && direction === 'UP') {
+        confidence += 3;
+        signals.push({
+            layer: 'DTE Anomaly',
+            detail: `\u003cspan class="highlight-up"\u003e⏳ Theta Collapse (DTE=2)\u003c/span\u003e: Market at 2 days to expiry. Massive short covering adds structural upward bias (+3% Confidence).`,
+        });
+    }
+
     // ─── CALCULATE EXPECTED % AND PREDICTED CLOSE ───
-    const expectedPct = calculateExpectedPct(signalClass, pcrOI, spotChangePct);
+    let expectedPct = calculateExpectedPct(signalClass, pcrOI, spotChangePct);
+
+    // Apply IV Skew Magnitude Adjuster
+    if (ivSkew !== null) {
+        if (ivSkew > 2.0 && direction === 'UP') {
+            expectedPct -= 0.15;
+        } else if (ivSkew < 0 && direction === 'UP') {
+            expectedPct += 0.05;
+        }
+    }
+
+    // Call OI Cascade (Miss #8 Fix: Delta hedging pressure)
+    if (callOiChangePct > 1000 && direction === 'DOWN' && dte !== 5 && dte !== 8) {
+        expectedPct -= 0.10; // Increases the bearish mathematical drop
+        signals.push({
+            layer: 'OI Cascade',
+            detail: `\u003cspan class="highlight-down"\u003e📉 Institutional Delta-Hedging\u003c/span\u003e: Massive Call writing (>1000%) forces immediate futures selling. Target structurally expanded by -0.10%.`,
+        });
+    }
     const pointMove = Math.abs(spotClose * expectedPct / 100);
 
     // Intraday Target: Full expected move (where market SHOULD reach during the day)
@@ -269,6 +367,11 @@ function predict(data) {
         closeRetention,
         sureHitMultiplier,
         isExhaustion,
+        ivSkew,
+        pcrDelta,
+        turnoverRatio,
+        compositeRatio,
+        extremeSkewWarning
     };
 }
 
@@ -588,7 +691,65 @@ function displayResult(result, mode) {
         suretyText = `🚫 DANGER / AVOID`;
         suretyClass = 'surety-bar surety-danger';
     }
+
+    // Phase 2 catastrophic overrides
+    if (result.ivSkew !== undefined && result.ivSkew > 4.0) {
+        suretyText = `🔴 BLACK SWAN WARNING: IV Skew at +${result.ivSkew.toFixed(2)}. Extreme catastrophic risk.`;
+        suretyClass = 'surety-bar surety-danger';
+    } else if (result.extremeSkewWarning && action === 'BUY') {
+        suretyText = `⚠️ EXTREME SKEW UPWARD: Moves heavily dampened.`;
+        suretyClass = 'surety-bar surety-risky';
+    }
+
     if (confTextEl) { confTextEl.textContent = suretyText; confTextEl.className = suretyClass; }
+
+    // Analytics Row UI updates
+    const analyticsRow = $('analytics-row');
+    if (analyticsRow) {
+        let hasData = false;
+
+        if (result.ivSkew !== undefined && result.ivSkew !== null) {
+            $('val-skew').textContent = (result.ivSkew > 0 ? '+' : '') + result.ivSkew.toFixed(2);
+            $('val-skew').className = `a-val ${result.ivSkew > 2 ? 'warn' : (result.ivSkew < 0 ? 'up' : '')}`;
+            hasData = true;
+        } else {
+            $('val-skew').textContent = '—';
+            $('val-skew').className = 'a-val';
+        }
+
+        if (result.pcrDelta !== undefined && result.pcrDelta !== null) {
+            $('val-delta').textContent = (result.pcrDelta > 0 ? '+' : '') + result.pcrDelta.toFixed(2);
+            $('val-delta').className = `a-val ${result.pcrDelta > 0.8 ? 'warn' : (result.pcrDelta < -0.6 ? 'up' : '')}`;
+            hasData = true;
+        } else {
+            $('val-delta').textContent = '—';
+            $('val-delta').className = 'a-val';
+        }
+
+        if (result.turnoverRatio !== undefined && result.turnoverRatio !== null) {
+            $('val-turnover').textContent = result.turnoverRatio.toFixed(2) + 'x';
+            $('val-turnover').className = `a-val ${result.turnoverRatio > 3 ? 'warn' : (result.turnoverRatio < 0.5 ? 'up' : '')}`;
+            hasData = true;
+        } else {
+            $('val-turnover').textContent = '—';
+            $('val-turnover').className = 'a-val';
+        }
+
+        if (result.compositeRatio !== undefined && result.compositeRatio !== null) {
+            $('val-composite').textContent = result.compositeRatio.toFixed(2);
+            $('val-composite').className = `a-val ${result.compositeRatio > 3 ? 'warn' : (result.compositeRatio < 0.5 ? 'up' : '')}`;
+            hasData = true;
+        } else {
+            $('val-composite').textContent = '—';
+            $('val-composite').className = 'a-val';
+        }
+
+        if (hasData) {
+            analyticsRow.classList.remove('hidden');
+        } else {
+            analyticsRow.classList.add('hidden');
+        }
+    }
 
     // ─── KV rows ───
     $('prev-close').textContent = formatPrice(result.spotClose);
@@ -726,9 +887,27 @@ function getManualInput() {
     const putVolChangePct = parseFloat($('input-put-vol').value);
     const callVolChangePct = parseFloat($('input-call-vol').value);
     const pcrOI = parseFloat($('input-pcr-oi').value);
+    const prevPcrRawInput = $('input-prev-pcr-oi').value;
+    const prevPcrInput = prevPcrRawInput ? parseFloat(prevPcrRawInput) : undefined;
     const dte = parseInt($('input-dte').value, 10);
     const pcrVolRaw = $('input-pcr-vol').value;
     const pcrVolume = pcrVolRaw ? parseFloat(pcrVolRaw) : undefined;
+
+    // Phase 2 Inputs
+    const putIVRaw = $('input-put-iv').value;
+    const callIVRaw = $('input-call-iv').value;
+    const putIV = putIVRaw ? parseFloat(putIVRaw) : undefined;
+    const callIV = callIVRaw ? parseFloat(callIVRaw) : undefined;
+
+    const putVolAbsRaw = $('input-put-vol-abs').value;
+    const callVolAbsRaw = $('input-call-vol-abs').value;
+    const putVolAbs = putVolAbsRaw ? parseFloat(putVolAbsRaw) : undefined;
+    const callVolAbs = callVolAbsRaw ? parseFloat(callVolAbsRaw) : undefined;
+
+    const putOIAbsRaw = $('input-put-oi-abs').value;
+    const callOIAbsRaw = $('input-call-oi-abs').value;
+    const putOIAbs = putOIAbsRaw ? parseFloat(putOIAbsRaw) : undefined;
+    const callOIAbs = callOIAbsRaw ? parseFloat(callOIAbsRaw) : undefined;
 
     // Validation
     const errors = [];
@@ -756,8 +935,16 @@ function getManualInput() {
         putVolChangePct,
         callVolChangePct,
         pcrOI,
+        prevPcrInput,
         dte,
         pcrVolume,
+        putIV,
+        callIV,
+        putVolAbs,
+        callVolAbs,
+        putOIAbs,
+        callOIAbs,
+        isManual: true,
     };
 }
 
