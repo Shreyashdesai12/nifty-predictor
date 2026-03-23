@@ -1119,7 +1119,8 @@ function parseDumpText(text) {
         if (!el) continue;
 
         // Set value — works for both <input> and <select>
-        el.value = rawVal;
+        const cleanVal = (el.type === 'number' && rawVal.startsWith('+')) ? rawVal.slice(1) : rawVal;
+        el.value = cleanVal;
         filled++;
         filledFields.push(rawKey);
     }
