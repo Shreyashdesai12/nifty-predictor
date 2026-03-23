@@ -227,10 +227,6 @@ function predict(data) {
     }
 
     let prevPcr = prevPcrInput;
-    if (prevPcr === undefined && !isManual) {
-        const prevPcrRaw = localStorage.getItem('nifty_prev_pcr');
-        if (prevPcrRaw) prevPcr = parseFloat(prevPcrRaw);
-    }
 
     if (prevPcr !== undefined && !isNaN(prevPcr)) {
         pcrDelta = pcrOI - prevPcr;
@@ -247,7 +243,6 @@ function predict(data) {
             });
         }
     }
-    localStorage.setItem('nifty_prev_pcr', pcrOI);
 
     if (putVolAbs && callVolAbs && putOIAbs && callOIAbs) {
         const putTurnover = parseFloat(putVolAbs) / parseFloat(putOIAbs);
