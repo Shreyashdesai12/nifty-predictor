@@ -1267,3 +1267,96 @@ footer p {
     border-radius: var(--r-lg) var(--r-lg) 0 0;
   }
 }
+
+/* ===================================================================
+   DUMP TEXT QUICK FILL
+   =================================================================== */
+
+.dump-section {
+  padding: 16px 0 16px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.dump-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.dump-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.dump-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--green-bg);
+  color: #1A7A37;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+
+.dump-textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: none;
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  font-size: 11.5px;
+  font-family: 'Courier New', monospace;
+  color: var(--text-primary);
+  resize: none;
+  height: 110px;
+  margin-bottom: 10px;
+  line-height: 1.65;
+  transition: background 0.2s;
+}
+
+.dump-textarea:focus {
+  background: #E0E0E0;
+  outline: none;
+}
+
+.dump-textarea::placeholder {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.dump-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.dump-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 13px;
+  border-radius: var(--r-sm);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: fadeUp 0.2s ease-out;
+}
+
+.dump-status.success {
+  background: var(--green-bg);
+  color: #1A7A37;
+}
+
+.dump-status.error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.dump-status.warn {
+  background: #FFF8E0;
+  color: #9B6A00;
+}
