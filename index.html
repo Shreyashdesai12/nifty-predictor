@@ -239,7 +239,28 @@
           </div>
           <span class="chevron-icon" id="manual-chevron">▼</span>
         </div>
+
         <div id="manual-form" class="manual-form-body hidden">
+
+          <!-- ⚡ DUMP TEXT QUICK FILL -->
+          <div class="dump-section">
+            <div class="dump-header">
+              <span class="dump-label">⚡ Paste Data Dump</span>
+              <span class="dump-badge">FASTEST</span>
+            </div>
+            <textarea
+              id="dump-text-input"
+              class="dump-textarea"
+              placeholder="Paste ChatGPT/Claude dump text here...&#10;&#10;Today's Spot Close: 23114.50&#10;Today's Spot % Change: +0.49&#10;Put Interpretation: SB&#10;Put OI % Change: 88.37&#10;Call OI % Change: 58.81&#10;..."
+            ></textarea>
+            <div class="dump-btns">
+              <button id="btn-parse-dump" class="btn-black" type="button">⚡ Auto-Fill All Fields</button>
+              <button id="btn-clear-dump" class="btn-outline" type="button">🗑️ Clear</button>
+            </div>
+            <div id="dump-status" class="dump-status hidden"></div>
+          </div>
+          <!-- END DUMP TEXT SECTION -->
+
           <div class="form-grid">
             <div class="form-field">
               <label>Today's Spot Close</label>
