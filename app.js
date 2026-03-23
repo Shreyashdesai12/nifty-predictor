@@ -27,7 +27,8 @@ function predict(data) {
         isManual,           // True if inputs came from manual form
         dte,                // Days to expiry (e.g., 5)
         pcrVolume,          // PCR by volume (optional, e.g., 4.53)
-        putIV, callIV, putVolAbs, callVolAbs, putOIAbs, callOIAbs // Phase 2 deep inputs
+        putIV, callIV, putVolAbs, callVolAbs, putOIAbs, callOIAbs, // Phase 2 deep inputs
+        callLtp, callAvg, putLtp, putAvg // Phase 4 Hidden Bear inputs
     } = data;
 
     const signals = [];
@@ -299,6 +300,14 @@ function predict(data) {
             detail: `\u003cspan class="highlight-down"\u003e📉 Institutional Delta-Hedging\u003c/span\u003e: Massive Call writing (>1000%) forces immediate futures selling. Target structurally expanded by -0.10%.`,
         });
     }
+
+    // Miss #5 Fix: Hidden Institutional Dumping
+    let hiddenBearFlag = false;
+    if (callLtp !== undefined && callAvg !== undefined && putLtp !== undefined && putAvg !== undefined) {
+        if (callLtp < callAvg && putLtp > putAvg && putInterp === 'SB') {
+            hiddenBearFlag = true;
+        }
+    }
     const pointMove = Math.abs(spotClose * expectedPct / 100);
 
     // Intraday Target: Full expected move (where market SHOULD reach during the day)
@@ -371,6 +380,15 @@ function predict(data) {
         });
     }
 
+    if (hiddenBearFlag) {
+        confidence = 0;
+        signals.push({
+            layer: '🚨 INSTITUTIONAL DUMPING',
+            detail: `\u003cspan class="highlight-warn"\u003eBLACK SWAN DIVERGENCE\u003c/span\u003e: Despite the SB label, Call LTP (${callLtp}) closed below Avg (${callAvg}), and Put LTP (${putLtp}) closed above Avg (${putAvg}). Institutions discreetly unloaded bullish exposure at the close. Massive geopolitical/panic breakdown imminent.`,
+            cls: 'triggered'
+        });
+    }
+
     return {
         direction,
         signalClass,
@@ -395,7 +413,8 @@ function predict(data) {
         compositeRatio,
         extremeSkewWarning,
         isUntested,
-        untestedReason
+        untestedReason,
+        hiddenBearFlag
     };
 }
 
@@ -716,8 +735,20 @@ function displayResult(result, mode) {
         suretyClass = 'surety-bar surety-danger';
     }
 
+    // Hidden Institutional Dumping
+    if (result.hiddenBearFlag) {
+        suretyText = `⚠️ DO NOT TRADE — HIDDEN INSTITUTIONAL DUMPING (PRE-CRASH SIGNATURE)`;
+        suretyClass = 'surety-bar surety-danger';
+        const ringFillLoc = $('ring-fill');
+        const circ = 2 * Math.PI * 18;
+        if (ringFillLoc) setTimeout(() => { ringFillLoc.style.strokeDashoffset = circ; }, 50);
+        const cv = $('confidence-val');
+        if (cv) cv.textContent = '0';
+        const cl = $('conf-label');
+        if (cl) cl.textContent = '0%';
+    }
     // Untested market condition overrides
-    if (result.isUntested) {
+    else if (result.isUntested) {
         suretyText = `⚠️ DO NOT TRADE — UNTESTED MARKET CONDITION`;
         suretyClass = 'surety-bar surety-danger';
         // Force UI ring to exactly 0% immediately
@@ -946,6 +977,15 @@ function getManualInput() {
     const putOIAbs = putOIAbsRaw ? parseFloat(putOIAbsRaw) : undefined;
     const callOIAbs = callOIAbsRaw ? parseFloat(callOIAbsRaw) : undefined;
 
+    const callLtpRaw = $('input-call-ltp').value;
+    const callAvgRaw = $('input-call-avg').value;
+    const putLtpRaw = $('input-put-ltp').value;
+    const putAvgRaw = $('input-put-avg').value;
+    const callLtp = callLtpRaw ? parseFloat(callLtpRaw) : undefined;
+    const callAvg = callAvgRaw ? parseFloat(callAvgRaw) : undefined;
+    const putLtp = putLtpRaw ? parseFloat(putLtpRaw) : undefined;
+    const putAvg = putAvgRaw ? parseFloat(putAvgRaw) : undefined;
+
     // Validation
     const errors = [];
     if (isNaN(spotClose) || spotClose <= 0) errors.push("Today's Close");
@@ -981,6 +1021,10 @@ function getManualInput() {
         callVolAbs,
         putOIAbs,
         callOIAbs,
+        callLtp,
+        callAvg,
+        putLtp,
+        putAvg,
         isManual: true,
     };
 }
@@ -1029,61 +1073,73 @@ function parseDumpText(text) {
     // IMPORTANT: longer/more-specific keys must come BEFORE shorter overlapping ones
     const FIELD_MAP = {
         // Spot
-        "today's spot close":           'input-close',
-        "today's spot % change":        'input-change',
-        "spot close":                   'input-close',
-        "spot % change":                'input-change',
-        "spot change":                  'input-change',
+        "today's spot close": 'input-close',
+        "today's spot % change": 'input-change',
+        "spot close": 'input-close',
+        "spot % change": 'input-change',
+        "spot change": 'input-change',
 
         // Put interpretation
-        "put interpretation":           'input-put-interp',
+        "put interpretation": 'input-put-interp',
 
         // OI % changes
-        "put oi % change (atm)":        'input-put-oi',
-        "put oi % change":              'input-put-oi',
-        "call oi % change (atm)":       'input-call-oi',
-        "call oi % change":             'input-call-oi',
+        "put oi % change (atm)": 'input-put-oi',
+        "put oi % change": 'input-put-oi',
+        "call oi % change (atm)": 'input-call-oi',
+        "call oi % change": 'input-call-oi',
 
         // Volume % changes
-        "put volume % change":          'input-put-vol',
-        "put vol % change":             'input-put-vol',
-        "call volume % change":         'input-call-vol',
-        "call vol % change":            'input-call-vol',
+        "put volume % change": 'input-put-vol',
+        "put vol % change": 'input-put-vol',
+        "call volume % change": 'input-call-vol',
+        "call vol % change": 'input-call-vol',
 
         // PCR OI — prev day MUST match before plain "pcr oi"
-        "prev day pcr oi (opt)":        'input-prev-pcr-oi',
-        "prev day pcr oi":              'input-prev-pcr-oi',
-        "previous day pcr oi":          'input-prev-pcr-oi',
-        "prev pcr oi":                  'input-prev-pcr-oi',
-        "pcr oi":                       'input-pcr-oi',
+        "prev day pcr oi (opt)": 'input-prev-pcr-oi',
+        "prev day pcr oi": 'input-prev-pcr-oi',
+        "previous day pcr oi": 'input-prev-pcr-oi',
+        "prev pcr oi": 'input-prev-pcr-oi',
+        "pcr oi": 'input-pcr-oi',
 
         // DTE
-        "dte (days to expiry)":         'input-dte',
-        "days to expiry":               'input-dte',
-        "dte":                          'input-dte',
+        "dte (days to expiry)": 'input-dte',
+        "days to expiry": 'input-dte',
+        "dte": 'input-dte',
 
         // PCR Volume
-        "pcr volume (optional)":        'input-pcr-vol',
-        "pcr volume":                   'input-pcr-vol',
-        "pcr vol":                      'input-pcr-vol',
+        "pcr volume (optional)": 'input-pcr-vol',
+        "pcr volume": 'input-pcr-vol',
+        "pcr vol": 'input-pcr-vol',
 
         // IV
-        "put iv (optional)":            'input-put-iv',
-        "put iv":                       'input-put-iv',
-        "call iv (optional)":           'input-call-iv',
-        "call iv":                      'input-call-iv',
+        "put iv (optional)": 'input-put-iv',
+        "put iv": 'input-put-iv',
+        "call iv (optional)": 'input-call-iv',
+        "call iv": 'input-call-iv',
 
         // Absolute volumes
-        "put total volume (opt)":       'input-put-vol-abs',
-        "put total volume":             'input-put-vol-abs',
-        "call total volume (opt)":      'input-call-vol-abs',
-        "call total volume":            'input-call-vol-abs',
+        "put total volume (opt)": 'input-put-vol-abs',
+        "put total volume": 'input-put-vol-abs',
+        "call total volume (opt)": 'input-call-vol-abs',
+        "call total volume": 'input-call-vol-abs',
 
         // Absolute OI
-        "put total oi (opt)":           'input-put-oi-abs',
-        "put total oi":                 'input-put-oi-abs',
-        "call total oi (opt)":          'input-call-oi-abs',
-        "call total oi":                'input-call-oi-abs',
+        "put total oi (opt)": 'input-put-oi-abs',
+        "put total oi": 'input-put-oi-abs',
+        "call total oi (opt)": 'input-call-oi-abs',
+        "call total oi": 'input-call-oi-abs',
+
+        // New Avg and LTP fields
+        "call ltp (opt)": 'input-call-ltp',
+        "call ltp": 'input-call-ltp',
+        "call avg price (opt)": 'input-call-avg',
+        "call avg price": 'input-call-avg',
+        "call avg": 'input-call-avg',
+        "put ltp (opt)": 'input-put-ltp',
+        "put ltp": 'input-put-ltp',
+        "put avg price (opt)": 'input-put-avg',
+        "put avg price": 'input-put-avg',
+        "put avg": 'input-put-avg',
     };
 
     const lines = text.split('\n');
