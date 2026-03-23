@@ -1015,7 +1015,121 @@ async function fetchNSEData() {
 
 
 // ===================================================================
-// SECTION 5: EVENT HANDLERS
+// SECTION 5: DUMP TEXT PARSER
+// ===================================================================
+
+/**
+ * Parse the ChatGPT-generated dump text and auto-fill the manual form.
+ * Maps field labels (case-insensitive) directly to input element IDs.
+ * Returns { filled, emptySkipped, filledFields }
+ */
+function parseDumpText(text) {
+
+    // Field map: normalized label → input element ID
+    // IMPORTANT: longer/more-specific keys must come BEFORE shorter overlapping ones
+    const FIELD_MAP = {
+        // Spot
+        "today's spot close":           'input-close',
+        "today's spot % change":        'input-change',
+        "spot close":                   'input-close',
+        "spot % change":                'input-change',
+        "spot change":                  'input-change',
+
+        // Put interpretation
+        "put interpretation":           'input-put-interp',
+
+        // OI % changes
+        "put oi % change (atm)":        'input-put-oi',
+        "put oi % change":              'input-put-oi',
+        "call oi % change (atm)":       'input-call-oi',
+        "call oi % change":             'input-call-oi',
+
+        // Volume % changes
+        "put volume % change":          'input-put-vol',
+        "put vol % change":             'input-put-vol',
+        "call volume % change":         'input-call-vol',
+        "call vol % change":            'input-call-vol',
+
+        // PCR OI — prev day MUST match before plain "pcr oi"
+        "prev day pcr oi (opt)":        'input-prev-pcr-oi',
+        "prev day pcr oi":              'input-prev-pcr-oi',
+        "previous day pcr oi":          'input-prev-pcr-oi',
+        "prev pcr oi":                  'input-prev-pcr-oi',
+        "pcr oi":                       'input-pcr-oi',
+
+        // DTE
+        "dte (days to expiry)":         'input-dte',
+        "days to expiry":               'input-dte',
+        "dte":                          'input-dte',
+
+        // PCR Volume
+        "pcr volume (optional)":        'input-pcr-vol',
+        "pcr volume":                   'input-pcr-vol',
+        "pcr vol":                      'input-pcr-vol',
+
+        // IV
+        "put iv (optional)":            'input-put-iv',
+        "put iv":                       'input-put-iv',
+        "call iv (optional)":           'input-call-iv',
+        "call iv":                      'input-call-iv',
+
+        // Absolute volumes
+        "put total volume (opt)":       'input-put-vol-abs',
+        "put total volume":             'input-put-vol-abs',
+        "call total volume (opt)":      'input-call-vol-abs',
+        "call total volume":            'input-call-vol-abs',
+
+        // Absolute OI
+        "put total oi (opt)":           'input-put-oi-abs',
+        "put total oi":                 'input-put-oi-abs',
+        "call total oi (opt)":          'input-call-oi-abs',
+        "call total oi":                'input-call-oi-abs',
+    };
+
+    const lines = text.split('\n');
+    let filled = 0;
+    let emptySkipped = 0;
+    const filledFields = [];
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Split on FIRST colon only
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx === -1) continue;
+
+        const rawKey = trimmed.substring(0, colonIdx).trim();
+        const rawVal = trimmed.substring(colonIdx + 1).trim();
+
+        // Normalize key: lowercase, collapse multiple spaces
+        const normalKey = rawKey.toLowerCase().replace(/\s+/g, ' ');
+
+        // Look up field ID
+        const inputId = FIELD_MAP[normalKey];
+        if (!inputId) continue;
+
+        // Skip blank values — user fills those manually
+        if (!rawVal) {
+            emptySkipped++;
+            continue;
+        }
+
+        const el = document.getElementById(inputId);
+        if (!el) continue;
+
+        // Set value — works for both <input> and <select>
+        el.value = rawVal;
+        filled++;
+        filledFields.push(rawKey);
+    }
+
+    return { filled, emptySkipped, filledFields };
+}
+
+
+// ===================================================================
+// SECTION 6: EVENT HANDLERS
 // ===================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1204,8 +1318,8 @@ document.addEventListener('DOMContentLoaded', () => {
             signalClass: r.signalClass,
             isExhaustion: r.isExhaustion,
             actualClose: actualCloseVal,
-            actualHigh: null, // Left null since we didn't ask for it
-            actualLow: null,  // Left null since we didn't ask for it
+            actualHigh: null,
+            actualLow: null,
             sureHitReached: modalHitResult,
         };
 
@@ -1268,13 +1382,66 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // ─── DUMP TEXT PARSER BUTTONS ───
+    const parseDumpBtn = $('btn-parse-dump');
+    const clearDumpBtn = $('btn-clear-dump');
+    const dumpStatusEl = $('dump-status');
+
+    function showDumpStatus(msg, type) {
+        if (!dumpStatusEl) return;
+        dumpStatusEl.textContent = msg;
+        dumpStatusEl.className = `dump-status ${type}`;
+        dumpStatusEl.classList.remove('hidden');
+        if (type === 'success') {
+            setTimeout(() => dumpStatusEl.classList.add('hidden'), 4000);
+        }
+    }
+
+    if (parseDumpBtn) {
+        parseDumpBtn.addEventListener('click', () => {
+            const dumpInput = $('dump-text-input');
+            const text = dumpInput ? dumpInput.value.trim() : '';
+
+            if (!text) {
+                showDumpStatus('⚠️ Nothing pasted yet. Paste the ChatGPT dump text above.', 'error');
+                return;
+            }
+
+            const { filled, emptySkipped } = parseDumpText(text);
+
+            if (filled === 0) {
+                showDumpStatus('❌ Could not read any fields. Format must be "Field Name: Value" on each line.', 'error');
+                return;
+            }
+
+            const skipMsg = emptySkipped > 0
+                ? ` (${emptySkipped} blank field${emptySkipped > 1 ? 's' : ''} skipped — fill manually)`
+                : '';
+            showDumpStatus(`✅ ${filled} fields filled automatically!${skipMsg}`, 'success');
+
+            // Scroll to form so user can review
+            const formGrid = document.querySelector('.form-grid');
+            if (formGrid) {
+                setTimeout(() => formGrid.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+            }
+        });
+    }
+
+    if (clearDumpBtn) {
+        clearDumpBtn.addEventListener('click', () => {
+            const dumpInput = $('dump-text-input');
+            if (dumpInput) dumpInput.value = '';
+            if (dumpStatusEl) dumpStatusEl.classList.add('hidden');
+        });
+    }
+
     // Init history on load
     initHistory();
 });
 
 
 // ===================================================================
-// SECTION 6: HISTORY MANAGEMENT
+// SECTION 7: HISTORY MANAGEMENT
 // ===================================================================
 
 const HISTORY_KEY = 'kt21_history';
@@ -1382,7 +1549,7 @@ function renderHistory() {
 }
 
 // ===================================================================
-// SECTION 7: TEST SUITE (Run in browser console: runAllTests())
+// SECTION 8: TEST SUITE (Run in browser console: runAllTests())
 // ===================================================================
 
 /**
