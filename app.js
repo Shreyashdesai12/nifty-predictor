@@ -1514,28 +1514,57 @@ function saveToHistory(entry) {
 function initHistory() {
     let hist = getHistory();
 
-    // CLEANUP: Clean up any old entries without actualClose (removes the bad 21st March empty saves)
-    const originalLen = hist.length;
-    hist = hist.filter(h => h.actualClose !== null && h.actualClose !== undefined);
-    if (hist.length < originalLen) {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    // Remove legacy dirty items
+    hist = hist.filter(h => h.actualClose !== null && h.actualClose !== undefined || h.isPending);
+
+    const rawHistory = [
+        { date: '06-Mar-2026', input: { spotClose: 24450.45, spotChangePct: -1.27, putInterp: 'LB', putOiChangePct: 74.41, callOiChangePct: 430.62, putVolChangePct: 140, callVolChangePct: 64, pcrOI: 1.33, dte: 4, pcrVolume: 4.53 }, actualClose: 24028.05 },
+        { date: '09-Mar-2026', input: { spotClose: 24028.05, spotChangePct: -1.73, putInterp: 'SC', putOiChangePct: -11.95, callOiChangePct: 740.90, putVolChangePct: -1, callVolChangePct: 12539, pcrOI: 1.14, dte: 2, pcrVolume: 0.49 }, actualClose: 24261.60 },
+        { date: '10-Mar-2026', input: { spotClose: 24261.60, spotChangePct: 0.97, putInterp: 'SB', putOiChangePct: 1546.57, callOiChangePct: 728.96, putVolChangePct: 3077, callVolChangePct: 1233, pcrOI: 0.98, dte: 8, pcrVolume: 0.77 }, actualClose: 23866.85 },
+        { date: '11-Mar-2026', input: { spotClose: 23866.85, spotChangePct: -1.63, putInterp: 'LB', putOiChangePct: 202.68, callOiChangePct: 786.18, putVolChangePct: 1924, callVolChangePct: 3894, pcrOI: 1.51, dte: 7, pcrVolume: 5.50 }, actualClose: 23639.15 },
+        { date: '12-Mar-2026', input: { spotClose: 23639.15, spotChangePct: -0.95, putInterp: 'LB', putOiChangePct: 262.22, callOiChangePct: 1520.82, putVolChangePct: 178, callVolChangePct: 10457, pcrOI: 1.39, dte: 6, pcrVolume: 1.41 }, actualClose: 23151.10 },
+        { date: '13-Mar-2026', input: { spotClose: 23151.10, spotChangePct: -2.06, putInterp: 'LB', putOiChangePct: 139.65, callOiChangePct: 5194.92, putVolChangePct: 688, callVolChangePct: 25502, pcrOI: 1.64, dte: 5, pcrVolume: 2.83 }, actualClose: 23408.80 },
+        { date: '16-Mar-2026', input: { spotClose: 23408.80, spotChangePct: 1.11, putInterp: 'SB', putOiChangePct: 237.50, callOiChangePct: 59.56, putVolChangePct: -31, callVolChangePct: 116, pcrOI: 0.93, dte: 2, pcrVolume: 0.30 }, actualClose: 23581.15 },
+        { date: '17-Mar-2026', input: { spotClose: 23581.15, spotChangePct: 0.74, putInterp: 'SB', putOiChangePct: 368.70, callOiChangePct: 236.85, putVolChangePct: 1273, callVolChangePct: 397, pcrOI: 0.99, dte: 8, pcrVolume: 0.64 }, actualClose: 23777.80 },
+        { date: '18-Mar-2026', bs: true, input: { spotClose: 23777.80, spotChangePct: 0.83, putInterp: 'SB', putOiChangePct: 300, callOiChangePct: 400, putVolChangePct: 12, callVolChangePct: 10, pcrOI: 0.93, dte: 7, callLtp: 185, callAvg: 207.62, putLtp: 231.30, putAvg: 229.86 }, actualClose: 23002.15 },
+        { date: '19-Mar-2026', input: { spotClose: 23002.15, spotChangePct: -3.26, putInterp: 'LB', putOiChangePct: 22.83, callOiChangePct: 372.31, putVolChangePct: 143, callVolChangePct: 3533, pcrOI: 2.00, dte: 6, pcrVolume: 3.44 }, actualClose: 23114.50 },
+        { date: '20-Mar-2026', bs: true, input: { spotClose: 23114.50, spotChangePct: 0.49, putInterp: 'SB', putOiChangePct: 88.37, callOiChangePct: 58.81, putVolChangePct: 139, callVolChangePct: 106, pcrOI: 1.31, dte: 5, pcrVolume: 2.32, callLtp: 237.35, callAvg: 291.58, putLtp: 214.50, putAvg: 204.91 }, actualClose: 22493.50 },
+        { date: '23-Mar-2026', isPending: true, input: { spotClose: 22493.50, spotChangePct: -2.69, putInterp: 'LB', putOiChangePct: 6.23, callOiChangePct: 977.83, putVolChangePct: 180, callVolChangePct: 16211, pcrOI: 1.47, pcrVolume: 2.12, dte: 2, putIV: 39.04, callIV: 36.16 }, actualClose: null }
+    ];
+
+    const seed = rawHistory.map(day => {
+        const r = predict(day.input);
+        return {
+            date: day.date,
+            direction: day.bs ? 'DANGER' : r.direction,
+            confidence: day.bs ? 0 : r.confidence,
+            intradayTarget: r.intradayTarget,
+            sureHitLevel: r.sureHitLevel,
+            predictedClose: r.predictedClose,
+            spotClose: day.input.spotClose,
+            expectedPct: r.expectedPct,
+            sureHitMultiplier: r.sureHitMultiplier,
+            closeRetention: r.closeRetention,
+            signalClass: r.signalClass,
+            isExhaustion: r.isExhaustion,
+            actualClose: day.actualClose,
+            sureHitReached: day.isPending ? null : true,
+            isPending: day.isPending
+        };
+    });
+
+    // Merge logic: Ensure all dynamically calculated seeds exist, but don't delete new saves done by the user!
+    const mergedHist = [...seed];
+
+    // Add any manually saved history that isn't part of the core 11-day seed
+    const seedDates = seed.map(s => s.date);
+    for (const userSave of hist) {
+        if (!seedDates.includes(userSave.date)) {
+            mergedHist.push(userSave);
+        }
     }
 
-    // Pre-populate with 9 historical days if empty
-    if (hist.length === 0) {
-        const seed = [
-            { date: '06-Mar-2026', direction: 'DOWN', confidence: 80, intradayTarget: 24019, sureHitLevel: 24062, predictedClose: 24019, spotClose: 24450.45, expectedPct: -1.77, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'STRONG_BEARISH', isExhaustion: false, actualClose: 24028.05, actualHigh: 24467, actualLow: 23698, sureHitReached: true },
-            { date: '09-Mar-2026', direction: 'UP', confidence: 80, intradayTarget: 24256, sureHitLevel: 24233, predictedClose: 24256, spotClose: 24028.05, expectedPct: 0.95, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'BULLISH_SC', isExhaustion: false, actualClose: 24261.60, actualHigh: 24304, actualLow: 24028, sureHitReached: true },
-            { date: '10-Mar-2026', direction: 'DOWN', confidence: 70, intradayTarget: 23886, sureHitLevel: 23923, predictedClose: 23886, spotClose: 24261.60, expectedPct: -1.55, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'SPIKE_FLIP_DOWN', isExhaustion: false, actualClose: 23866.85, actualHigh: 24322, actualLow: 23834, sureHitReached: true },
-            { date: '11-Mar-2026', direction: 'DOWN', confidence: 90, intradayTarget: 23472, sureHitLevel: 23571, predictedClose: 23630, spotClose: 23866.85, expectedPct: -1.66, sureHitMultiplier: 0.75, closeRetention: 0.60, signalClass: 'STRONG_BEARISH', isExhaustion: true, actualClose: 23639.15, actualHigh: 23991, actualLow: 23556, sureHitReached: true },
-            { date: '12-Mar-2026', direction: 'DOWN', confidence: 85, intradayTarget: 23215, sureHitLevel: 23257, predictedClose: 23215, spotClose: 23639.15, expectedPct: -1.80, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'STRONG_BEARISH', isExhaustion: false, actualClose: 23151.10, actualHigh: 23695, actualLow: 23112, sureHitReached: true },
-            { date: '13-Mar-2026', direction: 'UP', confidence: 65, intradayTarget: 23464, sureHitLevel: 23432, predictedClose: 23417, spotClose: 23151.10, expectedPct: 1.35, sureHitMultiplier: 0.90, closeRetention: 0.85, signalClass: 'SPIKE_FLIP_UP', isExhaustion: false, actualClose: 23408.80, actualHigh: 23502, actualLow: 23119, sureHitReached: true },
-            { date: '16-Mar-2026', direction: 'UP', confidence: 90, intradayTarget: 23619, sureHitLevel: 23599, predictedClose: 23619, spotClose: 23408.80, expectedPct: 0.90, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'BULLISH_SB', isExhaustion: false, actualClose: 23581.15, actualHigh: 23657, actualLow: 23400, sureHitReached: true },
-            { date: '17-Mar-2026', direction: 'UP', confidence: 85, intradayTarget: 23782, sureHitLevel: 23761, predictedClose: 23782, spotClose: 23581.15, expectedPct: 0.85, sureHitMultiplier: 0.90, closeRetention: 1.00, signalClass: 'BULLISH_SB', isExhaustion: false, actualClose: 23777.80, actualHigh: 23862, actualLow: 23534, sureHitReached: true },
-            { date: '19-Mar-2026', direction: 'UP', confidence: 80, intradayTarget: 23425, sureHitLevel: 23319, predictedClose: 23129, spotClose: 23002.15, expectedPct: 1.84, sureHitMultiplier: 0.75, closeRetention: 0.30, signalClass: 'FADE_UP', isExhaustion: true, actualClose: 23114.50, actualHigh: 23345, actualLow: 23068, sureHitReached: true },
-        ];
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(seed));
-    }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(mergedHist));
     renderHistory();
 }
 
