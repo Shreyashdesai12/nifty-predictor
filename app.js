@@ -127,6 +127,17 @@ function predict(data) {
         }
     }
 
+    // ─── 12. SHORT SQUEEZE (MOMENTUM BREAKOUT) ───
+    if (isBullCandle && spotChangePct >= 1.50 && 
+        putOiChangePct !== undefined && callOiChangePct !== undefined && 
+        putLtp && putAvg && callLtp && callAvg) {
+        
+        if (putOiChangePct > callOiChangePct && putLtp < putAvg && callLtp > (callAvg * 0.95)) {
+            addSignal('UP', 92, 'SHORT_SQUEEZE', 'Override 6 (Squeeze)', 
+                '<span class="highlight-warn">🚀 TRIGGERED</span> — Rally + Put writing confirmed by LTP < Avg → <span class="highlight-up">SQUEEZE CONTINUATION</span>');
+        }
+    }
+
     // ─── DYNAMIC CONFIDENCE SCORING (CLAUDE ALGORITHM) ───
     let direction = upScore >= downScore ? 'UP' : 'DOWN';
     
@@ -238,6 +249,8 @@ function calculateExpectedPct(signalClass, pcrOI, priorDayPct) {
             return -1.50;
         case 'LIQUIDITY_TRAP':
             return -1.63;
+        case 'SHORT_SQUEEZE':
+            return 1.50;
         case 'NORMAL':
             return 0.85;
         default:
