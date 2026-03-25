@@ -706,16 +706,26 @@ main {
 
 .signal-step {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
   background: var(--bg);
   border-radius: var(--r-sm);
-  padding: 11px 13px;
-  border-left: 3px solid var(--border);
-  align-items: flex-start;
+  padding: 12px 14px;
+  border-left: 4px solid var(--border);
+  gap: 4px;
+}
+
+.signal-step.up {
+  border-left-color: var(--green);
+  background: #f0fff4;
+}
+
+.signal-step.down {
+  border-left-color: var(--red);
+  background: #fff5f5;
 }
 
 .signal-step.primary {
-  border-left-color: var(--black);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
 .signal-step.triggered {
@@ -723,21 +733,30 @@ main {
   background: #FFF8E0;
 }
 
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .step-layer {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  min-width: 68px;
-  padding-top: 1px;
-  white-space: nowrap;
 }
 
 .step-detail {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-primary);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  padding-left: 22px;
 }
 
 .step-detail .highlight-up {
